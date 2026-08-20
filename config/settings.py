@@ -3,12 +3,10 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 CONFIG_DIR = Path.home() / ".ig_profile_to_rag"
-CONFIG_FILE = CONFIG_DIR / "config.json"
+CONFIG_FILE = CONFIG_DIR / "settings.json"
 
 class AppSettings(BaseModel):
-    interests: str = Field(default="food, diet, recipes", description="Comma-separated list of interests")
-    max_posts: int = Field(default=50, description="Maximum number of posts to process")
-    audio_only: bool = Field(default=False, description="Whether to only process audio (true) or video as well (false)")
+    audio_only: bool = Field(default=False, description="Whether to only process audio globally")
     engine: str = Field(default="gemini", description="Engine to use: 'gemini' or 'local_whisper'")
     embed_provider: str = Field(default="gemini", description="Embedding provider: 'gemini' or 'local'")
 
