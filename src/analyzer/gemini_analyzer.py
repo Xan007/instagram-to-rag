@@ -8,6 +8,12 @@ from dotenv import load_dotenv
 warnings.filterwarnings("ignore")
 load_dotenv()
 
+FALLBACK_MODELS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash"
+]
+
 class GeminiAnalyzer:
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
@@ -17,7 +23,8 @@ class GeminiAnalyzer:
         
     def extract_knowledge(self, media_files: List[Dict[str, str]], post_description: str) -> str:
         """
-        Uploads media files to Gemini and extracts structured knowledge using Chat.send_message.
+        Uploads media files to Gemini and extracts structured knowledge.
+        Automatically falls back across multiple Gemini models if 503 UNAVAILABLE or 429 occurs.
         """
         uploaded_files = []
         try:
@@ -51,19 +58,26 @@ Provide a clear, structured markdown summary. Do not include introductory/conclu
 """
             contents = uploaded_files + [prompt] if uploaded_files else [prompt]
             
-            for attempt in range(3):
-                try:
-                    chat = self.client.chats.create(model='gemini-3.5-flash-lite')
-                    response = chat.send_message(contents)
-                    return response.text.strip()
-                except Exception as e:
-                    err_str = str(e)
-                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                        print(f"Analyzer rate limit reached. Waiting 15s before retry ({attempt + 1}/3)...")
-                        time.sleep(15)
-                    else:
-                        raise e
-            raise RuntimeError("Failed to extract knowledge with Gemini after 3 attempts.")
+            last_error = None
+            for model_name in FALLBACK_MODELS:
+                for attempt in range(2):
+                    try:
+                        chat = self.client.chats.create(model=model_name)
+                        response = chat.send_message(contents)
+                        return response.text.strip()
+                    except Exception as e:
+                        last_error = e
+                        err_str = str(e)
+                        if "503" in err_str or "UNAVAILABLE" in err_str:
+                            print(f"Model {model_name} is experiencing 503 high demand. Trying next model...")
+                            break # Fallback to next model immediately
+                        elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                            print(f"Rate limit on {model_name}. Waiting 10s...")
+                            time.sleep(10)
+                        else:
+                            break
+                            
+            raise RuntimeError(f"All fallback models failed for knowledge extraction: {last_error}")
             
         finally:
             for gfile in uploaded_files:

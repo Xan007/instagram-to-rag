@@ -6,11 +6,10 @@
 ```mermaid
 flowchart TD
     A[User CLI: `main.py run <username>`] --> B[Scraper Module: Apify / Instaloader]
-    B -->|Metadata + URLs| C[Interest Filter: Gemini 3.6 Flash]
-    C -->|YES / UNSURE| D[Media Downloader: Local data/raw/]
-    C -->|NO| S[Skip Post]
-    D -->|MP4 / JPG / Slides| E[Multimodal Analyzer: Gemini 3.6 Flash]
-    E -->|Structured Markdown Knowledge| F[Cleanup: Delete Local/Cloud Media]
+    B -->|Batch Post Metadata| C[Batch Filter: Gemini 3.5 Flash Lite]
+    C -->|Matching Post IDs| D[Parallel Downloader: ThreadPoolExecutor - 4 Workers]
+    D -->|Asynchronous Streaming Queue| E[Multimodal Analyzer: Gemini Multi-Model Fallback]
+    E -->|Structured Markdown Knowledge| F[Cleanup: Immediate Local File Deletion]
     E --> G[Pinecone Vector Indexer]
     G -->|Embed with gemini-embedding-001| H[(Pinecone Cloud Serverless Index)]
     G -->|JSON Backup| I[Local data/processed/]
@@ -18,20 +17,22 @@ flowchart TD
     Q[User CLI: `main.py query <question>`] --> R[Query Engine: gemini-embedding-001]
     R -->|Semantic Vector Search| H
     H -->|Top-K Matching Knowledge Chunks| R
-    R -->|Context + Question Prompt| J[Grounded Generator: Gemini 3.6 Flash]
+    R -->|Context + Question Prompt| J[Grounded Generator: Gemini Chat API]
     J --> K[Final Answer with Direct Instagram URLs]
 ```
 
-## Key Principles & Design Decisions
+## Performance & Resilience Features
 
-1. **Zero-Cost Free-Tier Operations**:
-   - Scraping: Apify Actor free monthly allowance.
-   - Multimodal Analysis & Embeddings: Gemini API free tier with rate-limit retries.
-   - Vector Storage: Pinecone Serverless free tier.
-2. **Ephemeral Local Storage**:
-   - Heavy video and image files are downloaded temporarily to `data/raw/`, uploaded to Gemini for knowledge extraction, and deleted immediately to preserve disk space.
-3. **Multi-Profile Configuration & Deduplication**:
-   - Each creator has distinct interests and a tracked list of processed post shortcodes in `~/.ig_profile_to_rag/profiles/<username>.json`.
-   - Repeated pipeline runs skip previously analyzed posts to conserve API quotas.
-4. **Strict RAG Grounding**:
-   - The query engine answers strictly based on retrieved creator posts and attaches verified links.
+1. **High-Speed Batch Filtering**:
+   - Groups up to 40 posts per single Gemini API call to reduce latency from minutes to seconds.
+2. **Parallel Downloads & Streaming Execution**:
+   - Media items (videos, carousel slides, images) download concurrently with 4 worker threads.
+   - As soon as the first download finishes, it streams directly into the Gemini Analyzer, keeping the GPU/API pipeline continuously fed.
+3. **Multi-Model Fallback Chain**:
+   - Handles `503 UNAVAILABLE` (model high demand) and `429` (rate limits) by automatically cascading across models: `gemini-3.5-flash-lite` -> `gemini-3.7-flash` -> `gemini-3.6-flash`.
+4. **Zero-Cost Free-Tier Operations**:
+   - Apify free monthly allowance for scraping.
+   - Gemini API free tier for analysis & embeddings.
+   - Pinecone Serverless free tier for vector storage.
+5. **Strict Provenance Guarantee**:
+   - Answers are synthesized strictly from retrieved creator posts with verified Instagram links.

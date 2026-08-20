@@ -1,5 +1,6 @@
 import typer
-from typing import Optional
+from typing import Optional, List, Dict, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.console import Console
 from config.settings import load_settings, save_settings
 from config.profiles import ProfileConfig, load_profile, save_profile, list_profiles
@@ -100,10 +101,9 @@ def run(username: str = typer.Argument(..., help="Instagram username to process"
         raise typer.Exit(1)
         
     settings = load_settings()
-    console.print(f"[bold blue]Starting pipeline for @{username}...[/bold blue]")
+    console.print(f"[bold blue]Starting high-speed pipeline for @{username}...[/bold blue]")
     console.print(f"Specific Interests: {profile.interests}")
     console.print(f"Max posts: {profile.max_posts}")
-    console.print(f"Global Engine: {settings.engine} | Embed Provider: {settings.embed_provider}")
     console.print(f"Scraper Engine: {settings.scraper_engine}")
     
     # Initialize components
@@ -133,58 +133,69 @@ def run(username: str = typer.Argument(..., help="Instagram username to process"
     new_processed_ids = []
     
     try:
-        # 1. Scrape metadata
-        console.print("\n[bold]Fetching posts...[/bold]")
-        post_generator = scraper.get_posts_metadata(username, profile.max_posts, profile.processed_ids)
+        # 1. Scrape metadata in batch
+        console.print("\n[bold]Fetching post metadata...[/bold]")
+        all_posts: List[Dict[str, Any]] = list(
+            scraper.get_posts_metadata(username, profile.max_posts, profile.processed_ids)
+        )
+        console.print(f"Retrieved {len(all_posts)} new candidates to evaluate.")
         
-        for metadata in post_generator:
-            post_id = metadata["id"]
-            post_url = metadata["url"]
-            console.print(f"\n[cyan]Evaluating Post ({metadata.get('type', 'Post')}): {post_url}[/cyan]")
+        if not all_posts:
+            console.print("[green]No new posts to process.[/green]")
+            return
             
-            # 2. Filter based on description/hashtags
-            decision = interest_filter.evaluate(metadata["description"], metadata["hashtags"], profile.interests)
-            console.print(f"Filter Decision: [bold]{decision}[/bold]")
+        # 2. High-speed batch interest filtering
+        console.print(f"\n[bold]Running batch interest filtering on {len(all_posts)} posts...[/bold]")
+        matching_ids = interest_filter.filter_batch(all_posts, profile.interests)
+        matching_posts = [p for p in all_posts if p["id"] in matching_ids]
+        console.print(f"[bold green]Filter matched {len(matching_posts)}/{len(all_posts)} relevant posts![/bold green]")
+        
+        if not matching_posts:
+            console.print("[yellow]No posts matched the target interests.[/yellow]")
+            return
             
-            if decision == "NO":
-                console.print("Skipping post (did not match interests).")
-                continue
-                
-            media_items = metadata.get("media_items", [])
-            downloaded_files = []
-            
-            # 3. Download media items (videos, images, slides)
+        # 3. Parallel downloading & streaming to Gemini Analyzer
+        console.print(f"\n[bold]Downloading media in parallel (4 workers) and streaming to Gemini...[/bold]")
+        
+        def download_task(post: Dict[str, Any]):
+            media_items = post.get("media_items", [])
+            downloaded = []
             if media_items:
-                console.print(f"Downloading {len(media_items)} media item(s)...")
-                try:
-                    downloaded_files = downloader.download_media_items(media_items, post_id)
-                except Exception as e:
-                    console.print(f"[red]Failed to download media:[/red] {e}")
-                    
-            # 4. Analyze
-            console.print("Analyzing content with Gemini...")
-            try:
-                extracted_text = analyzer.extract_knowledge(downloaded_files, metadata["description"])
-                console.print(f"[green]Successfully extracted knowledge![/green]")
-            except Exception as e:
-                console.print(f"[red]Failed to analyze content:[/red] {e}")
-                continue
-            finally:
-                if downloaded_files:
-                    downloader.cleanup_items(downloaded_files)
+                downloaded = downloader.download_media_items(media_items, post["id"])
+            return post, downloaded
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            # Submit download jobs
+            future_to_post = {executor.submit(download_task, post): post for post in matching_posts}
+            
+            for future in as_completed(future_to_post):
+                post, downloaded_files = future.result()
+                post_id = post["id"]
+                post_url = post["url"]
                 
-            # 5. Index into Pinecone
-            indexer.index_post(username, metadata, extracted_text)
-            
-            # Mark as processed
-            profile.processed_ids.append(post_id)
-            new_processed_ids.append(post_id)
-            
-            # Save profile progress immediately
-            save_profile(profile)
-            
-            import time
-            time.sleep(2)
+                console.print(f"\n[cyan]Processing Post ({post.get('type', 'Post')}): {post_url}[/cyan]")
+                
+                try:
+                    # 4. Analyze
+                    console.print("Analyzing content with Gemini...")
+                    extracted_text = analyzer.extract_knowledge(downloaded_files, post.get("description", ""))
+                    console.print(f"[green]Successfully extracted knowledge for {post_id}![/green]")
+                    
+                    # 5. Index into Pinecone
+                    indexer.index_post(username, post, extracted_text)
+                    
+                    # Mark as processed
+                    profile.processed_ids.append(post_id)
+                    new_processed_ids.append(post_id)
+                    
+                    # Save profile progress immediately
+                    save_profile(profile)
+                    
+                except Exception as e:
+                    console.print(f"[red]Error analyzing post {post_id}:[/red] {e}")
+                finally:
+                    if downloaded_files:
+                        downloader.cleanup_items(downloaded_files)
             
     except Exception as e:
         console.print(f"[bold red]An error occurred during pipeline execution:[/bold red] {e}")

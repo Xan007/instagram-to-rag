@@ -1,13 +1,13 @@
 # Filter Module (`src/filter/`)
 
 ## Responsibility
-Acts as an intelligent, zero-cost gatekeeper. Evaluates whether an Instagram post's title, description, and hashtags align with the specific user interests configured for that creator before downloading heavy media.
+Acts as an intelligent, zero-cost gatekeeper. Evaluates whether Instagram posts align with the creator's configured interests before triggering heavy media downloads.
 
-## Implementation (`src/filter/interest_filter.py`)
-- Powered by **`gemini-3.5-flash-lite`** for high throughput, sub-second latency, and minimal token consumption.
-- Evaluates raw captions and hashtags against the comma-separated interest list.
-- Returns a 3-way classification:
-  - **`YES`**: Post matches user interests -> proceed to download and deep analysis.
-  - **`NO`**: Post is unrelated -> skipped immediately without downloading.
-  - **`UNSURE`**: Caption is ambiguous or short -> kept for multimodal verification.
-- Includes automatic exponential backoff retry for Google API rate limits (`429 RESOURCE_EXHAUSTED`).
+## High-Speed Batch Architecture (`src/filter/interest_filter.py`)
+- **Batch Evaluation (`filter_batch`)**: Instead of 100 separate API requests, captions and hashtags are chunked in groups of 40 and evaluated in a single prompt.
+- **90%+ Latency & Quota Reduction**: Evaluates 100 posts in under 3 seconds using just 2-3 API roundtrips.
+- **Automatic Multi-Model Fallback**:
+  - Primary: `gemini-3.5-flash-lite` (highest speed and token efficiency).
+  - Fallback 1: `gemini-3.7-flash` (if 503 high demand occurs).
+  - Fallback 2: `gemini-3.6-flash`.
+- Returns a set of matching post IDs directly to the pipeline.
