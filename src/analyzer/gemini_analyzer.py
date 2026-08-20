@@ -38,7 +38,7 @@ Focus entirely on the actual information provided, ignoring filler content.
 """
         try:
             response = self.client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.6-flash',
                 contents=[video_file, prompt]
             )
             result = response.text
