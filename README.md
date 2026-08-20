@@ -1,10 +1,14 @@
+<div align="center">
+
 # InstaRAG
 
-[![Python](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/Xan007/ig-profile-to-rag)
-[![uv](https://img.shields.io/badge/uv-package%20manager-purple)](https://docs.astral.sh/uv/)
-[![Gemini](https://img.shields.io/badge/Gemini-embedding%20%2B%20analysis-orange)](https://ai.google.dev/)
-[![Pinecone](https://img.shields.io/badge/Pinecone-vector%20database-green)](https://www.pinecone.io/)
+[![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![uv](https://img.shields.io/badge/uv-package%20manager-6E4089?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
+[![Google Gemini](https://img.shields.io/badge/Google%20Gemini-embedding%20%2B%20analysis-4285F4?logo=googlegemini&logoColor=white)](https://ai.google.dev/)
+[![Pinecone](https://img.shields.io/badge/Pinecone-vector%20database-000000?logo=pinecone&logoColor=white)](https://www.pinecone.io/)
+[![faster-whisper](https://img.shields.io/badge/faster--whisper-audio%20transcription-23A9E0?logo=openai&logoColor=white)](https://github.com/SYSTRAN/faster-whisper)
+
+</div>
 
 InstaRAG is a CLI tool that extracts knowledge from Instagram profiles and saved posts, then indexes it into a Pinecone vector database for retrieval-augmented generation (RAG).
 
