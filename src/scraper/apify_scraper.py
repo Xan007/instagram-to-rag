@@ -14,17 +14,17 @@ class ApifyScraper:
         
     def get_posts_metadata(self, username: str, limit: int, skip_ids: List[str]) -> Generator[Dict[str, Any], None, None]:
         """
-        Calls Apify Instagram Scraper actor to fetch posts metadata.
-        Supports Videos, Single Images, and Sidecars (Carousels).
+        Calls Apify Instagram Post Scraper (apify/instagram-post-scraper) 
+        which is faster, cheaper, and specifically designed for post metadata.
         """
         run_input = {
-            "directUrls": [f"https://www.instagram.com/{username}/"],
-            "resultsType": "posts",
-            "resultsLimit": limit + len(skip_ids)
+            "username": [username],
+            "resultsLimit": limit + len(skip_ids),
+            "skipPinnedPosts": False
         }
         
-        print(f"Calling Apify Actor for @{username}... this might take a minute.")
-        run = self.client.actor("apify/instagram-scraper").call(run_input=run_input)
+        print(f"Calling apify/instagram-post-scraper for @{username} (Limit: {limit})...")
+        run = self.client.actor("apify/instagram-post-scraper").call(run_input=run_input)
         
         count = 0
         dataset_id = run.get("defaultDatasetId") if isinstance(run, dict) else run.default_dataset_id
@@ -42,7 +42,7 @@ class ApifyScraper:
             post_type = item.get("type", "Image")
             media_items = []
             
-            # Extract media items
+            # Extract media items (video, image, carousel)
             if post_type == "Video" or bool(item.get("videoUrl")):
                 if item.get("videoUrl"):
                     media_items.append({"type": "video", "url": item.get("videoUrl")})
