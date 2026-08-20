@@ -1,5 +1,6 @@
 import os
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,8 +10,7 @@ class InterestFilter:
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable is not set. Cannot use Gemini filter.")
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
+        self.client = genai.Client(api_key=api_key)
         
     def evaluate(self, description: str, hashtags: list, interests: str) -> str:
         """
@@ -35,7 +35,10 @@ Post Content:
 Response (YES, NO, or UNSURE):"""
         
         try:
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt
+            )
             result = response.text.strip().upper()
             if result in ["YES", "NO", "UNSURE"]:
                 return result

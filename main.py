@@ -13,12 +13,16 @@ console = Console()
 def config(
     audio_only: bool = typer.Option(None, "--audio-only", help="Process only audio globally"),
     engine: str = typer.Option(None, "--engine", help="'gemini' or 'local_whisper'"),
-    embed_provider: str = typer.Option(None, "--embed-provider", help="'gemini' or 'local'")
+    embed_provider: str = typer.Option(None, "--embed-provider", help="'gemini' or 'local'"),
+    ig_username: str = typer.Option(None, "--ig-username", help="Your Instagram username to load session and prevent 429 blocks")
 ):
     """Configure the global pipeline settings."""
     settings = load_settings()
     
     updated = False
+    if ig_username is not None:
+        settings.ig_username = ig_username
+        updated = True
     if audio_only is not None:
         settings.audio_only = audio_only
         updated = True
@@ -99,7 +103,7 @@ def run(username: str = typer.Argument(..., help="Instagram username to process"
     from src.analyzer.gemini_analyzer import GeminiAnalyzer
     from src.indexer.pinecone_indexer import PineconeIndexer
     
-    scraper = LocalInstaloaderScraper()
+    scraper = LocalInstaloaderScraper(settings.ig_username)
     downloader = MediaDownloader()
     indexer = PineconeIndexer()
     

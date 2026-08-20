@@ -9,6 +9,7 @@ class AppSettings(BaseModel):
     audio_only: bool = Field(default=False, description="Whether to only process audio globally")
     engine: str = Field(default="gemini", description="Engine to use: 'gemini' or 'local_whisper'")
     embed_provider: str = Field(default="gemini", description="Embedding provider: 'gemini' or 'local'")
+    ig_username: str = Field(default="", description="Your Instagram username (used for authenticated scraping to avoid 429 errors)")
 
 def load_settings() -> AppSettings:
     """Load settings from the configuration file."""
