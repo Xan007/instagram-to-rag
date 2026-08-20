@@ -1,7 +1,26 @@
-# System Architecture: InstagramProfile2RAG
+# System Architecture: InstaRAG
 
 ## Overview
-**InstagramProfile2RAG** is a zero-cost, privacy-first, modular data pipeline and Retrieval-Augmented Generation (RAG) system. It transforms content from Instagram profiles (videos, carousels, infographics, and text) into a structured vector database that can be queried with natural language, always citing original publication links.
+**InstaRAG** is a zero-cost, privacy-first, modular data pipeline and Retrieval-Augmented Generation (RAG) system. It transforms content from Instagram profiles and saved posts (videos, carousels, infographics, and text) into a structured vector database that can be queried with natural language, always citing original publication links.
+
+## Saved Posts Flow
+Instagram saved posts are imported from a personal data export (zip or `saved_posts.json`) and indexed without interest filtering:
+
+```mermaid
+flowchart LR
+    A[Instagram Export .zip] -->|extract ONLY saved_posts.json, discard the rest| B[data/saved/saved_posts.json]
+    B -->|parse: URL + caption + title| C[Dedup: skip IDs already in any profile or saved state]
+    C -->|pending posts| D[Parallel workers x4: yt-dlp downloads reel media from each URL]
+    D -->|instaloader session fallback for login-required reels| D
+    D -->|mp4 video| E[Gemini multimodal knowledge extraction]
+    C -->|caption fallback if media fetch fails| E
+    E --> F[Pinecone Indexer under `saved` collection]
+    F -->|processed/failed IDs| G[data/saved/state.json]
+```
+- The zip is never fully extracted: only `your_instagram_activity/saved/saved_posts.json` is read; all other personal data is discarded.
+- Every saved post is processed regardless of profile interests.
+- Posts already indexed through a profile are marked as processed (dedup by post shortcode).
+- Download + analysis run in parallel with 4 workers (`--workers` to tune).
 
 ```mermaid
 flowchart TD

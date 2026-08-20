@@ -1,7 +1,7 @@
-# Implementation Plan: InstagramProfile2RAG
+# Implementation Plan: InstaRAG
 
 ## Goal Description
-**InstagramProfile2RAG** is a zero-cost, locally-run (with cloud APIs) data pipeline designed to extract knowledge from specific Instagram profiles and build an interactive RAG (Retrieval-Augmented Generation) query engine. 
+**InstaRAG** is a zero-cost, locally-run (with cloud APIs) data pipeline designed to extract knowledge from specific Instagram profiles and saved posts and build an interactive RAG (Retrieval-Augmented Generation) query engine. 
 
 The system will:
 1. **Scrape** metadata (descriptions, hashtags, URLs) from an Instagram profile locally (with future Apify integration).

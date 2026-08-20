@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from pydantic import BaseModel, Field
 
-PROFILES_DIR = Path.home() / ".ig_profile_to_rag" / "profiles"
+PROFILES_DIR = Path.home() / ".instarag" / "profiles"
 
 class ProfileConfig(BaseModel):
     username: str

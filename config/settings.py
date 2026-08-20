@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-CONFIG_DIR = Path.home() / ".ig_profile_to_rag"
+CONFIG_DIR = Path.home() / ".instarag"
 CONFIG_FILE = CONFIG_DIR / "settings.json"
 
 class AppSettings(BaseModel):

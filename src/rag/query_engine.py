@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 warnings.filterwarnings("ignore")
 load_dotenv()
 
-INDEX_NAME = "ig-profile-rag"
+INDEX_NAME = "instarag"
 EMBEDDING_MODEL = "gemini-embedding-001"
 
 class QueryEngine:
@@ -63,14 +63,19 @@ class QueryEngine:
         # 3. Format Context
         context_parts = []
         sources = []
+        seen_urls = set()
         for idx, match in enumerate(matches):
             meta = match.get("metadata", {})
             post_url = meta.get("url", "Unknown URL")
             post_creator = meta.get("username", "Unknown")
             knowledge = meta.get("extracted_knowledge", "")
             
+            if post_url in seen_urls:
+                continue
+            seen_urls.add(post_url)
+            
             context_parts.append(
-                f"[Source {idx + 1}]\n"
+                f"[Source {len(sources) + 1}]\n"
                 f"Creator: @{post_creator}\n"
                 f"Post URL: {post_url}\n"
                 f"Knowledge:\n{knowledge}\n"
@@ -81,7 +86,7 @@ class QueryEngine:
         
         # 4. Generate Grounded Answer with Gemini Chat API
         prompt = f"""
-You are a specialized AI assistant that answers questions based EXCLUSIVELY on knowledge extracted from Instagram creators.
+You are a specialized AI assistant that answers questions based EXCLUSIVELY on the knowledge extracted from Instagram posts provided in the context.
 
 Context from Creator Posts:
 {full_context}
@@ -92,8 +97,11 @@ User Question:
 Instructions:
 1. Answer the user's question accurately and concisely using ONLY the provided context.
 2. If the context does not contain the answer, say "Based on the creator's content, I don't have information about that."
-3. At the end of every recommendation, fact, or recipe, ALWAYS cite and format the direct Instagram Post URL so the user can watch the original publication.
-4. Format your response cleanly in Markdown.
+3. Cite your sources with [Source N] right after each fact or recommendation, using the source numbers from the context.
+4. NEVER invent, paste, or repeat URLs or posts that are not in the context. Do not include a link more than once.
+5. Write in the same language as the user's question.
+6. Write as a natural plain-text chat message: no Markdown, no bold, no headers, no bullet lists, no asterisks.
+7. Be concise and never repeat yourself: state each fact once, in a single sentence, and do not restate the same idea in different words.
 """
         for attempt in range(3):
             try:
@@ -105,7 +113,7 @@ Instructions:
                 }
             except Exception as e:
                 err_str = str(e)
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str or "UNAVAILABLE" in err_str:
                     print(f"Rate limit reached on answer generation. Retrying in 10s ({attempt + 1}/3)...")
                     time.sleep(10)
                 else:

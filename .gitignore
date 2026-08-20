@@ -13,4 +13,5 @@ wheels/
 .env
 data/raw/
 data/processed/
+data/saved/
 

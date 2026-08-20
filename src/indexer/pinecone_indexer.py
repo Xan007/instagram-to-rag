@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-INDEX_NAME = "ig-profile-rag"
+INDEX_NAME = "instarag"
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM = 3072
 

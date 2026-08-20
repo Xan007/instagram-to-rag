@@ -1,7 +1,7 @@
 [project]
-name = "ig-profile-to-rag"
-version = "0.1.0"
-description = "Extract knowledge from Instagram profiles and index into a vector database for RAG."
+name = "instarag"
+version = "0.2.0"
+description = "Extract knowledge from Instagram profiles and saved posts into a vector database for RAG."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -20,4 +20,4 @@ dependencies = [
 ]
 
 [project.scripts]
-ig-rag = "main:main"
+instarag = "main:main"

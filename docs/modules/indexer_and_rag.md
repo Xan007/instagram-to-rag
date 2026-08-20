@@ -1,7 +1,7 @@
 # Indexer & RAG Modules (`src/indexer/` & `src/rag/`)
 
 ## Vector Indexer (`src/indexer/pinecone_indexer.py`)
-- Manages the cloud vector database index on Pinecone (`ig-profile-rag`).
+- Manages the cloud vector database index on Pinecone (`instarag`).
 - Uses **`gemini-embedding-001`** (3072 dimensions) to generate semantic vector representations of each post's extracted knowledge.
 - Automatically provisions a Pinecone Serverless index (`aws / us-east-1`) if it does not already exist.
 - Upserts metadata alongside vectors: `post_id`, `username`, `url`, `type`, `original_description`, and `extracted_knowledge`.
