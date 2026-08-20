@@ -3,10 +3,7 @@
 # InstaRAG
 
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![uv](https://img.shields.io/badge/uv-package%20manager-6E4089?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
 [![Google Gemini](https://img.shields.io/badge/Google%20Gemini-embedding%20%2B%20analysis-4285F4?logo=googlegemini&logoColor=white)](https://ai.google.dev/)
-[![Pinecone](https://img.shields.io/badge/Pinecone-vector%20database-000000?logo=pinecone&logoColor=white)](https://www.pinecone.io/)
-[![faster-whisper](https://img.shields.io/badge/faster--whisper-audio%20transcription-23A9E0?logo=openai&logoColor=white)](https://github.com/SYSTRAN/faster-whisper)
 
 </div>
 
