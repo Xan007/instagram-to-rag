@@ -38,7 +38,8 @@ class ApifyScraper:
             if shortcode in skip_ids:
                 continue
                 
-            is_video = item.get("isVideo", False)
+            is_video = bool(item.get("isVideo")) or item.get("type") == "Video" or bool(item.get("videoUrl"))
+            video_url = item.get("videoUrl") if is_video else None
             
             metadata = {
                 "id": shortcode,
@@ -46,7 +47,7 @@ class ApifyScraper:
                 "description": item.get("caption", ""),
                 "hashtags": item.get("hashtags", []),
                 "is_video": is_video,
-                "video_url": item.get("videoUrl") if is_video else None,
+                "video_url": video_url,
             }
             yield metadata
             count += 1

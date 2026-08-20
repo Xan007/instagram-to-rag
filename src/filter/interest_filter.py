@@ -34,18 +34,26 @@ Post Content:
 
 Response (YES, NO, or UNSURE):"""
         
-        try:
-            response = self.client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=prompt
-            )
-            result = response.text.strip().upper()
-            if result in ["YES", "NO", "UNSURE"]:
-                return result
-            # Fallback if model says something else
-            if "YES" in result: return "YES"
-            if "NO" in result: return "NO"
-            return "UNSURE"
-        except Exception as e:
-            print(f"Error calling Gemini API for filtering: {e}")
-            return "UNSURE" # Default to unsure so we process the video rather than lose data
+        import time
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model='gemini-3.6-flash',
+                    contents=prompt
+                )
+                result = response.text.strip().upper()
+                if result in ["YES", "NO", "UNSURE"]:
+                    return result
+                if "YES" in result: return "YES"
+                if "NO" in result: return "NO"
+                return "UNSURE"
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    print(f"Gemini API rate limit reached. Waiting 15s before retry (attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(15)
+                else:
+                    print(f"Error calling Gemini API for filtering: {e}")
+                    return "UNSURE"
+        return "UNSURE"
