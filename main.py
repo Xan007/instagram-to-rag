@@ -91,10 +91,82 @@ def run(username: str = typer.Argument(..., help="Instagram username to process"
     console.print(f"[bold blue]Starting pipeline for @{username}...[/bold blue]")
     console.print(f"Specific Interests: {profile.interests}")
     console.print(f"Max posts: {profile.max_posts}")
-    console.print(f"Global Engine: {settings.engine} | Embed Provider: {settings.embed_provider}")
     
-    # TODO: Implement the scraper, filter, downloader, analyzer, and indexer logic here
-    console.print("\n[yellow]Pipeline execution logic is not yet implemented.[/yellow]")
+    # Initialize components
+    from src.scraper.local_instaloader import LocalInstaloaderScraper
+    from src.filter.interest_filter import InterestFilter
+    from src.downloader.media_downloader import MediaDownloader
+    from src.analyzer.gemini_analyzer import GeminiAnalyzer
+    from src.indexer.pinecone_indexer import PineconeIndexer
+    
+    scraper = LocalInstaloaderScraper()
+    downloader = MediaDownloader()
+    indexer = PineconeIndexer()
+    
+    try:
+        interest_filter = InterestFilter()
+        analyzer = GeminiAnalyzer()
+    except ValueError as e:
+        console.print(f"[bold red]Configuration Error:[/bold red] {e}")
+        console.print("Please set GEMINI_API_KEY in your .env file.")
+        raise typer.Exit(1)
+        
+    new_processed_ids = []
+    
+    try:
+        # 1. Scrape metadata
+        console.print("\n[bold]Fetching posts...[/bold]")
+        post_generator = scraper.get_posts_metadata(username, profile.max_posts, profile.processed_ids)
+        
+        for metadata in post_generator:
+            post_id = metadata["id"]
+            console.print(f"\n[cyan]Evaluating Post: {metadata['url']}[/cyan]")
+            
+            # 2. Filter based on description/hashtags
+            decision = interest_filter.evaluate(metadata["description"], metadata["hashtags"], profile.interests)
+            console.print(f"Filter Decision: [bold]{decision}[/bold]")
+            
+            if decision == "NO":
+                console.print("Skipping post (did not match interests).")
+                continue
+                
+            if not metadata["is_video"] or not metadata["video_url"]:
+                console.print("Post is not a video or has no URL. Skipping for now (only reels supported currently).")
+                continue
+                
+            # 3. Download
+            console.print("Downloading media...")
+            try:
+                video_path = downloader.download_video(metadata["video_url"], post_id)
+            except Exception as e:
+                console.print(f"[red]Failed to download video:[/red] {e}")
+                continue
+                
+            # 4. Analyze
+            console.print("Analyzing video with Gemini...")
+            try:
+                extracted_text = analyzer.extract_knowledge(video_path, metadata["description"])
+                console.print(f"[green]Successfully extracted knowledge![/green]")
+            except Exception as e:
+                console.print(f"[red]Failed to analyze video:[/red] {e}")
+                continue
+            finally:
+                downloader.cleanup(video_path)
+                
+            # 5. Index
+            indexer.index_post(username, metadata, extracted_text)
+            
+            # Mark as processed
+            profile.processed_ids.append(post_id)
+            new_processed_ids.append(post_id)
+            
+            # Save profile progress immediately so we don't lose it if it crashes
+            save_profile(profile)
+            
+    except Exception as e:
+        console.print(f"[bold red]An error occurred during pipeline execution:[/bold red] {e}")
+        
+    console.print(f"\n[bold green]Pipeline finished![/bold green] Processed {len(new_processed_ids)} new posts.")
 
 
 @app.command()
