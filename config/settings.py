@@ -10,6 +10,7 @@ class AppSettings(BaseModel):
     engine: str = Field(default="gemini", description="Engine to use: 'gemini' or 'local_whisper'")
     embed_provider: str = Field(default="gemini", description="Embedding provider: 'gemini' or 'local'")
     ig_username: str = Field(default="", description="Your Instagram username (used for authenticated scraping to avoid 429 errors)")
+    scraper_engine: str = Field(default="apify", description="Scraper engine to use: 'apify' or 'instaloader'")
 
 def load_settings() -> AppSettings:
     """Load settings from the configuration file."""

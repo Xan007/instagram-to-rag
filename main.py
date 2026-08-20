@@ -14,12 +14,19 @@ def config(
     audio_only: bool = typer.Option(None, "--audio-only", help="Process only audio globally"),
     engine: str = typer.Option(None, "--engine", help="'gemini' or 'local_whisper'"),
     embed_provider: str = typer.Option(None, "--embed-provider", help="'gemini' or 'local'"),
-    ig_username: str = typer.Option(None, "--ig-username", help="Your Instagram username to load session and prevent 429 blocks")
+    ig_username: str = typer.Option(None, "--ig-username", help="Your Instagram username to load session and prevent 429 blocks"),
+    scraper_engine: str = typer.Option(None, "--scraper-engine", help="'apify' or 'instaloader'")
 ):
     """Configure the global pipeline settings."""
     settings = load_settings()
     
     updated = False
+    if scraper_engine is not None:
+        if scraper_engine not in ["apify", "instaloader"]:
+            console.print("[bold red]Invalid scraper engine. Use 'apify' or 'instaloader'.[/bold red]")
+            raise typer.Exit(1)
+        settings.scraper_engine = scraper_engine
+        updated = True
     if ig_username is not None:
         settings.ig_username = ig_username
         updated = True
@@ -94,16 +101,22 @@ def run(username: str = typer.Argument(..., help="Instagram username to process"
     settings = load_settings()
     console.print(f"[bold blue]Starting pipeline for @{username}...[/bold blue]")
     console.print(f"Specific Interests: {profile.interests}")
-    console.print(f"Max posts: {profile.max_posts}")
+    console.print(f"Global Engine: {settings.engine} | Embed Provider: {settings.embed_provider}")
+    console.print(f"Scraper Engine: {settings.scraper_engine}")
     
     # Initialize components
     from src.scraper.local_instaloader import LocalInstaloaderScraper
+    from src.scraper.apify_scraper import ApifyScraper
     from src.filter.interest_filter import InterestFilter
     from src.downloader.media_downloader import MediaDownloader
     from src.analyzer.gemini_analyzer import GeminiAnalyzer
     from src.indexer.pinecone_indexer import PineconeIndexer
     
-    scraper = LocalInstaloaderScraper(settings.ig_username)
+    if settings.scraper_engine == "apify":
+        scraper = ApifyScraper()
+    else:
+        scraper = LocalInstaloaderScraper(settings.ig_username)
+        
     downloader = MediaDownloader()
     indexer = PineconeIndexer()
     
