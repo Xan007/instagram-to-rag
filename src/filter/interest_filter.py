@@ -1,8 +1,10 @@
 import os
+import time
+import warnings
 from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 
+warnings.filterwarnings("ignore")
 load_dotenv()
 
 class InterestFilter:
@@ -18,7 +20,7 @@ class InterestFilter:
         Returns 'YES', 'NO', or 'UNSURE'.
         """
         if not interests.strip():
-            return "YES" # If no interests defined, accept everything
+            return "YES"
             
         content = f"Description: {description}\nHashtags: {', '.join(hashtags)}"
         
@@ -34,14 +36,11 @@ Post Content:
 
 Response (YES, NO, or UNSURE):"""
         
-        import time
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response = self.client.models.generate_content(
-                    model='gemini-3.5-flash-lite',
-                    contents=prompt
-                )
+                chat = self.client.chats.create(model='gemini-3.5-flash-lite')
+                response = chat.send_message(prompt)
                 result = response.text.strip().upper()
                 if result in ["YES", "NO", "UNSURE"]:
                     return result

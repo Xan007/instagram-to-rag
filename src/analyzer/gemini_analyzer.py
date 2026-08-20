@@ -1,10 +1,11 @@
 import os
 import time
+import warnings
 from typing import List, Dict
 from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 
+warnings.filterwarnings("ignore")
 load_dotenv()
 
 class GeminiAnalyzer:
@@ -16,9 +17,7 @@ class GeminiAnalyzer:
         
     def extract_knowledge(self, media_files: List[Dict[str, str]], post_description: str) -> str:
         """
-        Uploads media files (videos, images, carousel slides) to Gemini, 
-        and extracts comprehensive knowledge (recipes, tips, instructions, facts).
-        Optimized for token efficiency.
+        Uploads media files to Gemini and extracts structured knowledge using Chat.send_message.
         """
         uploaded_files = []
         try:
@@ -27,7 +26,6 @@ class GeminiAnalyzer:
                 print(f"Uploading {item['type']} {path} to Gemini...")
                 gfile = self.client.files.upload(file=path)
                 
-                # Wait for video processing if video
                 if item["type"] == "video":
                     while gfile.state.name == "PROCESSING":
                         print("Waiting for video processing...")
@@ -55,10 +53,8 @@ Provide a clear, structured markdown summary. Do not include introductory/conclu
             
             for attempt in range(3):
                 try:
-                    response = self.client.models.generate_content(
-                        model='gemini-3.5-flash-lite',
-                        contents=contents
-                    )
+                    chat = self.client.chats.create(model='gemini-3.5-flash-lite')
+                    response = chat.send_message(contents)
                     return response.text.strip()
                 except Exception as e:
                     err_str = str(e)
@@ -70,7 +66,6 @@ Provide a clear, structured markdown summary. Do not include introductory/conclu
             raise RuntimeError("Failed to extract knowledge with Gemini after 3 attempts.")
             
         finally:
-            # Always clean up files on Gemini cloud
             for gfile in uploaded_files:
                 try:
                     self.client.files.delete(name=gfile.name)

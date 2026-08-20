@@ -1,10 +1,12 @@
 import os
 import time
+import warnings
 from typing import Optional, List, Dict, Any
 from pinecone import Pinecone
 from google import genai
 from dotenv import load_dotenv
 
+warnings.filterwarnings("ignore")
 load_dotenv()
 
 INDEX_NAME = "ig-profile-rag"
@@ -35,7 +37,7 @@ class QueryEngine:
 
     def query(self, question: str, username: Optional[str] = None, top_k: int = 4) -> Dict[str, Any]:
         """
-        Retrieves relevant context from Pinecone and generates a grounded response with Gemini.
+        Retrieves relevant context from Pinecone and generates a grounded response with Gemini Chat API.
         Always includes citations and original Instagram URLs.
         """
         # 1. Embed query
@@ -77,7 +79,7 @@ class QueryEngine:
             
         full_context = "\n---\n".join(context_parts)
         
-        # 4. Generate Grounded Answer with Gemini
+        # 4. Generate Grounded Answer with Gemini Chat API
         prompt = f"""
 You are a specialized AI assistant that answers questions based EXCLUSIVELY on knowledge extracted from Instagram creators.
 
@@ -95,10 +97,8 @@ Instructions:
 """
         for attempt in range(3):
             try:
-                response = self.genai_client.models.generate_content(
-                    model='gemini-3.5-flash-lite',
-                    contents=prompt
-                )
+                chat = self.genai_client.chats.create(model='gemini-3.5-flash-lite')
+                response = chat.send_message(prompt)
                 return {
                     "answer": response.text.strip(),
                     "sources": sources
