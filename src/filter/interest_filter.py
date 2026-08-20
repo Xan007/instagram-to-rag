@@ -39,7 +39,7 @@ Response (YES, NO, or UNSURE):"""
         for attempt in range(max_retries):
             try:
                 response = self.client.models.generate_content(
-                    model='gemini-3.6-flash',
+                    model='gemini-3.5-flash-lite',
                     contents=prompt
                 )
                 result = response.text.strip().upper()

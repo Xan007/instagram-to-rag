@@ -1,5 +1,6 @@
 import os
 import time
+from typing import List, Dict
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -13,37 +14,65 @@ class GeminiAnalyzer:
             raise ValueError("GEMINI_API_KEY environment variable is not set.")
         self.client = genai.Client(api_key=api_key)
         
-    def extract_knowledge(self, video_path: str, post_description: str) -> str:
+    def extract_knowledge(self, media_files: List[Dict[str, str]], post_description: str) -> str:
         """
-        Uploads video to Gemini, extracts knowledge (audio transcription + visual context).
+        Uploads media files (videos, images, carousel slides) to Gemini, 
+        and extracts comprehensive knowledge (recipes, tips, instructions, facts).
+        Optimized for token efficiency.
         """
-        print(f"Uploading video {video_path} to Gemini...")
-        video_file = self.client.files.upload(file=video_path)
-        
-        # Wait for processing if needed
-        while video_file.state.name == "PROCESSING":
-            print("Waiting for video processing...")
-            time.sleep(2)
-            video_file = self.client.files.get(name=video_file.name)
-            
-        if video_file.state.name == "FAILED":
-            raise ValueError(f"Video processing failed for {video_path}")
-            
-        prompt = f"""
-You are an expert knowledge extractor. Watch and listen to this Instagram Reel.
-The post's original description is: "{post_description}".
-Extract all valuable knowledge, tips, recipes, facts, or instructions mentioned in the video (both spoken and visually presented).
-Write a comprehensive but concise summary of the knowledge. 
-Focus entirely on the actual information provided, ignoring filler content.
-"""
+        uploaded_files = []
         try:
-            response = self.client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=[video_file, prompt]
-            )
-            result = response.text
-        finally:
-            # Always clean up the file from Gemini's servers
-            self.client.files.delete(name=video_file.name)
+            for item in media_files:
+                path = item["path"]
+                print(f"Uploading {item['type']} {path} to Gemini...")
+                gfile = self.client.files.upload(file=path)
+                
+                # Wait for video processing if video
+                if item["type"] == "video":
+                    while gfile.state.name == "PROCESSING":
+                        print("Waiting for video processing...")
+                        time.sleep(2)
+                        gfile = self.client.files.get(name=gfile.name)
+                        
+                    if gfile.state.name == "FAILED":
+                        print(f"Warning: processing failed for {path}")
+                        continue
+                        
+                uploaded_files.append(gfile)
+                
+            prompt = f"""
+You are an expert knowledge extractor for an AI knowledge base.
+Review the provided media (images, slides, or video/audio) and the post's caption.
+
+Original Caption:
+"{post_description}"
+
+Task:
+Extract all dense, valuable factual knowledge, advice, recipes, exact ingredients/quantities, workout steps, or dietary rules presented across the visual content and audio.
+Provide a clear, structured markdown summary. Do not include introductory/concluding greetings or fluff. Focus on actionable information and details.
+"""
+            contents = uploaded_files + [prompt] if uploaded_files else [prompt]
             
-        return result
+            for attempt in range(3):
+                try:
+                    response = self.client.models.generate_content(
+                        model='gemini-3.5-flash-lite',
+                        contents=contents
+                    )
+                    return response.text.strip()
+                except Exception as e:
+                    err_str = str(e)
+                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                        print(f"Analyzer rate limit reached. Waiting 15s before retry ({attempt + 1}/3)...")
+                        time.sleep(15)
+                    else:
+                        raise e
+            raise RuntimeError("Failed to extract knowledge with Gemini after 3 attempts.")
+            
+        finally:
+            # Always clean up files on Gemini cloud
+            for gfile in uploaded_files:
+                try:
+                    self.client.files.delete(name=gfile.name)
+                except Exception:
+                    pass

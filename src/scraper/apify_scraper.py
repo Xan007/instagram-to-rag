@@ -9,17 +9,18 @@ class ApifyScraper:
     def __init__(self):
         api_key = os.getenv("APIFY_API_KEY")
         if not api_key:
-            raise ValueError("APIFY_API_KEY environment variable is not set. Cannot use Apify filter.")
+            raise ValueError("APIFY_API_KEY environment variable is not set. Cannot use Apify.")
         self.client = ApifyClient(api_key)
         
     def get_posts_metadata(self, username: str, limit: int, skip_ids: List[str]) -> Generator[Dict[str, Any], None, None]:
         """
         Calls Apify Instagram Scraper actor to fetch posts metadata.
+        Supports Videos, Single Images, and Sidecars (Carousels).
         """
         run_input = {
             "directUrls": [f"https://www.instagram.com/{username}/"],
             "resultsType": "posts",
-            "resultsLimit": limit + len(skip_ids) # Fetch a bit more in case we skip many
+            "resultsLimit": limit + len(skip_ids)
         }
         
         print(f"Calling Apify Actor for @{username}... this might take a minute.")
@@ -38,16 +39,37 @@ class ApifyScraper:
             if shortcode in skip_ids:
                 continue
                 
-            is_video = bool(item.get("isVideo")) or item.get("type") == "Video" or bool(item.get("videoUrl"))
-            video_url = item.get("videoUrl") if is_video else None
+            post_type = item.get("type", "Image")
+            media_items = []
+            
+            # Extract media items
+            if post_type == "Video" or bool(item.get("videoUrl")):
+                if item.get("videoUrl"):
+                    media_items.append({"type": "video", "url": item.get("videoUrl")})
+            elif post_type == "Sidecar":
+                child_posts = item.get("childPosts", [])
+                if child_posts:
+                    for child in child_posts:
+                        if child.get("videoUrl"):
+                            media_items.append({"type": "video", "url": child.get("videoUrl")})
+                        elif child.get("displayUrl"):
+                            media_items.append({"type": "image", "url": child.get("displayUrl")})
+                elif item.get("images"):
+                    for img_url in item.get("images"):
+                        media_items.append({"type": "image", "url": img_url})
+                elif item.get("displayUrl"):
+                    media_items.append({"type": "image", "url": item.get("displayUrl")})
+            else: # Image
+                if item.get("displayUrl"):
+                    media_items.append({"type": "image", "url": item.get("displayUrl")})
             
             metadata = {
                 "id": shortcode,
                 "url": item.get("url", f"https://www.instagram.com/p/{shortcode}/"),
+                "type": post_type,
                 "description": item.get("caption", ""),
                 "hashtags": item.get("hashtags", []),
-                "is_video": is_video,
-                "video_url": video_url,
+                "media_items": media_items,
             }
             yield metadata
             count += 1

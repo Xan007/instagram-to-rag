@@ -1,37 +1,50 @@
 import os
 import requests
 from pathlib import Path
+from typing import List, Dict
 
 class MediaDownloader:
     def __init__(self, download_dir: str = "data/raw"):
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(parents=True, exist_ok=True)
         
-    def download_video(self, video_url: str, post_id: str) -> str:
+    def download_media_items(self, media_items: List[Dict[str, str]], post_id: str) -> List[Dict[str, str]]:
         """
-        Downloads an MP4 video from a direct URL and saves it locally.
-        Returns the absolute path to the downloaded file.
+        Downloads media items (videos, images) and returns a list of local file dicts:
+        [{"type": "video"|"image", "path": "/path/to/file"}]
         """
-        if not video_url:
-            raise ValueError("No video URL provided.")
-            
-        file_path = self.download_dir / f"{post_id}.mp4"
-        
-        # If it already exists, return the path
-        if file_path.exists():
-            return str(file_path.absolute())
-            
-        response = requests.get(video_url, stream=True)
-        response.raise_for_status()
-        
-        with open(file_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+        downloaded = []
+        for idx, item in enumerate(media_items):
+            m_type = item.get("type", "image")
+            m_url = item.get("url")
+            if not m_url:
+                continue
                 
-        return str(file_path.absolute())
+            ext = ".mp4" if m_type == "video" else ".jpg"
+            filename = f"{post_id}_{idx}{ext}"
+            file_path = self.download_dir / filename
+            
+            if not file_path.exists():
+                try:
+                    response = requests.get(m_url, stream=True, timeout=30)
+                    response.raise_for_status()
+                    with open(file_path, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                except Exception as e:
+                    print(f"Error downloading {m_url}: {e}")
+                    continue
+                    
+            downloaded.append({"type": m_type, "path": str(file_path.absolute())})
+            
+        return downloaded
         
-    def cleanup(self, file_path: str):
-        """Removes the downloaded file after processing."""
-        path = Path(file_path)
-        if path.exists():
-            path.unlink()
+    def cleanup_items(self, items: List[Dict[str, str]]):
+        """Removes downloaded files after processing."""
+        for item in items:
+            p = Path(item["path"])
+            if p.exists():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass

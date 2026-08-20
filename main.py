@@ -1,4 +1,5 @@
 import typer
+from typing import Optional
 from rich.console import Console
 from config.settings import load_settings, save_settings
 from config.profiles import ProfileConfig, load_profile, save_profile, list_profiles
@@ -101,6 +102,7 @@ def run(username: str = typer.Argument(..., help="Instagram username to process"
     settings = load_settings()
     console.print(f"[bold blue]Starting pipeline for @{username}...[/bold blue]")
     console.print(f"Specific Interests: {profile.interests}")
+    console.print(f"Max posts: {profile.max_posts}")
     console.print(f"Global Engine: {settings.engine} | Embed Provider: {settings.embed_provider}")
     console.print(f"Scraper Engine: {settings.scraper_engine}")
     
@@ -118,14 +120,14 @@ def run(username: str = typer.Argument(..., help="Instagram username to process"
         scraper = LocalInstaloaderScraper(settings.ig_username)
         
     downloader = MediaDownloader()
-    indexer = PineconeIndexer()
     
     try:
         interest_filter = InterestFilter()
         analyzer = GeminiAnalyzer()
+        indexer = PineconeIndexer()
     except ValueError as e:
         console.print(f"[bold red]Configuration Error:[/bold red] {e}")
-        console.print("Please set GEMINI_API_KEY in your .env file.")
+        console.print("Please check your .env file for GEMINI_API_KEY, PINECONE_API_KEY, etc.")
         raise typer.Exit(1)
         
     new_processed_ids = []
@@ -137,7 +139,8 @@ def run(username: str = typer.Argument(..., help="Instagram username to process"
         
         for metadata in post_generator:
             post_id = metadata["id"]
-            console.print(f"\n[cyan]Evaluating Post: {metadata['url']}[/cyan]")
+            post_url = metadata["url"]
+            console.print(f"\n[cyan]Evaluating Post ({metadata.get('type', 'Post')}): {post_url}[/cyan]")
             
             # 2. Filter based on description/hashtags
             decision = interest_filter.evaluate(metadata["description"], metadata["hashtags"], profile.interests)
@@ -147,38 +150,41 @@ def run(username: str = typer.Argument(..., help="Instagram username to process"
                 console.print("Skipping post (did not match interests).")
                 continue
                 
-            if not metadata["is_video"] or not metadata["video_url"]:
-                console.print("Post is not a video or has no URL. Skipping for now (only reels supported currently).")
-                continue
-                
-            # 3. Download
-            console.print("Downloading media...")
-            try:
-                video_path = downloader.download_video(metadata["video_url"], post_id)
-            except Exception as e:
-                console.print(f"[red]Failed to download video:[/red] {e}")
-                continue
-                
+            media_items = metadata.get("media_items", [])
+            downloaded_files = []
+            
+            # 3. Download media items (videos, images, slides)
+            if media_items:
+                console.print(f"Downloading {len(media_items)} media item(s)...")
+                try:
+                    downloaded_files = downloader.download_media_items(media_items, post_id)
+                except Exception as e:
+                    console.print(f"[red]Failed to download media:[/red] {e}")
+                    
             # 4. Analyze
-            console.print("Analyzing video with Gemini...")
+            console.print("Analyzing content with Gemini...")
             try:
-                extracted_text = analyzer.extract_knowledge(video_path, metadata["description"])
+                extracted_text = analyzer.extract_knowledge(downloaded_files, metadata["description"])
                 console.print(f"[green]Successfully extracted knowledge![/green]")
             except Exception as e:
-                console.print(f"[red]Failed to analyze video:[/red] {e}")
+                console.print(f"[red]Failed to analyze content:[/red] {e}")
                 continue
             finally:
-                downloader.cleanup(video_path)
+                if downloaded_files:
+                    downloader.cleanup_items(downloaded_files)
                 
-            # 5. Index
+            # 5. Index into Pinecone
             indexer.index_post(username, metadata, extracted_text)
             
             # Mark as processed
             profile.processed_ids.append(post_id)
             new_processed_ids.append(post_id)
             
-            # Save profile progress immediately so we don't lose it if it crashes
+            # Save profile progress immediately
             save_profile(profile)
+            
+            import time
+            time.sleep(2)
             
     except Exception as e:
         console.print(f"[bold red]An error occurred during pipeline execution:[/bold red] {e}")
@@ -187,12 +193,29 @@ def run(username: str = typer.Argument(..., help="Instagram username to process"
 
 
 @app.command()
-def query(question: str = typer.Argument(..., help="Question to ask the knowledge base")):
-    """Ask a question based on the indexed knowledge."""
-    console.print(f"[bold blue]Querying RAG for:[/bold blue] {question}")
-    
-    # TODO: Implement the query engine logic here
-    console.print("\n[yellow]Query logic is not yet implemented.[/yellow]")
+def query(
+    question: str = typer.Argument(..., help="Question to ask the knowledge base"),
+    creator: Optional[str] = typer.Option(None, "--creator", "-c", help="Filter by specific Instagram creator")
+):
+    """Ask a question based on the indexed knowledge base."""
+    console.print(f"[bold blue]Querying RAG Engine for:[/bold blue] [italic]'{question}'[/italic]")
+    if creator:
+        console.print(f"Filtered by creator: @{creator}")
+        
+    from src.rag.query_engine import QueryEngine
+    try:
+        engine = QueryEngine()
+        result = engine.query(question=question, username=creator)
+        
+        console.print("\n[bold green]=== Answer ===[/bold green]\n")
+        console.print(result["answer"])
+        
+        if result["sources"]:
+            console.print("\n[bold yellow]Referenced Sources:[/bold yellow]")
+            for src in result["sources"]:
+                console.print(f" - @{src['creator']}: {src['url']}")
+    except Exception as e:
+        console.print(f"[bold red]Query failed:[/bold red] {e}")
 
 
 if __name__ == "__main__":
