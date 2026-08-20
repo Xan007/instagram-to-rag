@@ -48,8 +48,8 @@ Global settings and profiles are stored in `~/.instarag`.
 
 ```bash
 # Add a profile and process it
-instarag profile add --username bejaranofit --mode gemini
-instarag run --username bejaranofit
+instarag profile add --username <your_target> --mode gemini
+instarag run --username <your_target>
 
 # Process saved posts from an Instagram data export
 instarag saved import export.zip
@@ -59,7 +59,7 @@ instarag saved process
 instarag auth-session your_username
 
 # Ask questions
-instarag query "workout routine for muscle gain" --creator bejaranofit
+instarag query "your question here" --creator <your_target>
 ```
 
 ## Commands
