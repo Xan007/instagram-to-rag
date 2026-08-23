@@ -7,7 +7,8 @@ class MediaDownloader:
     def __init__(self, download_dir: str = "data/raw"):
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(parents=True, exist_ok=True)
-        
+        self.session = requests.Session()
+
     def download_media_items(self, media_items: List[Dict[str, str]], post_id: str) -> List[Dict[str, str]]:
         """
         Downloads media items (videos, images) and returns a list of local file dicts:
@@ -26,7 +27,7 @@ class MediaDownloader:
             
             if not file_path.exists():
                 try:
-                    response = requests.get(m_url, stream=True, timeout=30)
+                    response = self.session.get(m_url, stream=True, timeout=30)
                     response.raise_for_status()
                     with open(file_path, "wb") as f:
                         for chunk in response.iter_content(chunk_size=8192):

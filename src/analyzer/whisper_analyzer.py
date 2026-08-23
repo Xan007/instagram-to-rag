@@ -50,6 +50,7 @@ class WhisperAnalyzer:
             "no_warnings": True,
             "noplaylist": True,
             "retries": 3,
+            "concurrent_fragment_downloads": 4,
         }
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(source_url, download=True)
