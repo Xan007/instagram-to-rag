@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Dict, Any
 from pinecone import Pinecone, ServerlessSpec
 from google import genai
-from dotenv import load_dotenv
+from config.env import load_runtime_env
 
-load_dotenv()
+load_runtime_env()
 
 INDEX_NAME = "instarag"
 EMBEDDING_MODEL = "gemini-embedding-001"
@@ -46,13 +46,14 @@ class PineconeIndexer:
             )
             time.sleep(5)
             
-    def _get_embedding(self, text: str) -> list:
+    def _get_embedding(self, text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
         """Generates embeddings using Gemini embedding model with retry for rate limits."""
         for attempt in range(3):
             try:
                 res = self.genai_client.models.embed_content(
                     model=EMBEDDING_MODEL,
-                    contents=text
+                    contents=text,
+                    config=genai.types.EmbedContentConfig(task_type=task_type),
                 )
                 return res.embeddings[0].values
             except Exception as e:
