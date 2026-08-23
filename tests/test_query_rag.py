@@ -54,6 +54,11 @@ class TestBuildPrompt:
         assert "General (no proviene de los creadores):" in prompt
         assert "Never attribute anything in that final block" in prompt
 
+    def test_history_block_included_for_continuity(self):
+        prompt = QueryEngine.build_prompt("q?", "CTX", "strict", history_block="User: hola\nAssistant: ey")
+        assert "Conversation so far" in prompt
+        assert "User: hola" in prompt
+
     def test_mode_validation_constant_in_sync(self):
         from src.rag.query_engine import MODES
 

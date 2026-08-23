@@ -6,6 +6,11 @@ from typing import Any, Dict, List, Optional
 from pinecone import Pinecone
 from google import genai
 from config.env import load_runtime_env
+from src.rag.conversation import (
+    build_history_block,
+    condense_question,
+    normalize_history,
+)
 
 warnings.filterwarnings("ignore")
 load_runtime_env()
@@ -110,12 +115,23 @@ class QueryEngine:
         return full_context, sources, dropped
 
     @staticmethod
-    def build_prompt(question: str, context: str, mode: str) -> str:
+    def build_prompt(
+        question: str,
+        context: str,
+        mode: str,
+        history_block: str = "",
+    ) -> str:
         """Assemble the generation prompt for the requested mode. Pure function."""
         rules = _STRICT_RULES if mode == "strict" else _GROUNDED_PLUS_RULES
+        conversation_section = ""
+        if history_block:
+            conversation_section = f"""
+Conversation so far (for continuity only; do not repeat it):
+{history_block}
+"""
         return f"""
 You are a specialized AI assistant that answers questions based EXCLUSIVELY on the knowledge extracted from Instagram posts provided in the context.
-
+{conversation_section}
 Context from Creator Posts:
 {context}
 
@@ -140,20 +156,29 @@ User Question:
         top_k: int = DEFAULT_TOP_K,
         min_score: float = DEFAULT_MIN_SCORE,
         mode: str = "grounded_plus",
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Retrieve relevant context from Pinecone and generate a grounded response.
 
         mode='strict': answers strictly from creator content or refuses.
         mode='grounded_plus': same grounding, optionally appending a clearly
         labeled general-knowledge block when it helps the user.
+
+        history (client-owned, stateless): prior [{role, content}] turns used
+        to condense the question for retrieval and keep the answer coherent.
         """
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
 
-        # 1. Embed query
-        query_vector = self._get_embedding(question)
+        pairs = normalize_history(history)
 
-        # 2. Query Pinecone
+        # 1. Condense follow-ups into a standalone search query (never fails open)
+        search_query = condense_question(self.genai_client, GENERATION_MODEL, question, pairs)
+
+        # 2. Embed the (possibly condensed) query
+        query_vector = self._get_embedding(search_query)
+
+        # 3. Query Pinecone
         filter_dict = {"username": {"$eq": username}} if username else None
 
         results = self.index.query(
@@ -165,11 +190,14 @@ User Question:
 
         matches = results.get("matches", [])
         if not matches:
-            return {
+            response = {
                 "answer": "No relevant posts or knowledge found in the database to answer your question.",
                 "sources": [],
                 "mode": mode,
             }
+            if pairs:
+                response["standalone_question"] = search_query
+            return response
 
         # 3. Build filtered, deduplicated context (captions included)
         context, sources, _dropped = self.build_context(matches, min_score=min_score)
@@ -188,19 +216,28 @@ User Question:
                 "sources": [],
                 "mode": mode,
                 "low_confidence": True,
+                **({"standalone_question": search_query} if pairs else {}),
             }
 
         # 4. Generate Grounded Answer with Gemini Chat API
-        prompt = self.build_prompt(question, context, mode)
+        prompt = self.build_prompt(
+            question,
+            context,
+            mode,
+            history_block=build_history_block(pairs),
+        )
         for attempt in range(3):
             try:
                 chat = self.genai_client.chats.create(model=GENERATION_MODEL)
                 response = chat.send_message(prompt)
-                return {
+                result = {
                     "answer": response.text.strip(),
                     "sources": self.annotate_citations(response.text.strip(), sources),
                     "mode": mode,
                 }
+                if pairs:
+                    result["standalone_question"] = search_query
+                return result
             except Exception as e:
                 err_str = str(e)
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str or "UNAVAILABLE" in err_str:
