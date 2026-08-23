@@ -4,10 +4,10 @@ import time
 import warnings
 from typing import List, Dict, Set
 from google import genai
-from dotenv import load_dotenv
+from config.env import load_runtime_env
 
 warnings.filterwarnings("ignore")
-load_dotenv()
+load_runtime_env()
 
 FALLBACK_MODELS = [
     "gemini-3.5-flash-lite",

@@ -4,21 +4,34 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
-from pydantic import BaseModel, Field
 
-SAVED_DIR = Path("data/saved")
+from config.paths import SAVED_DIR
+
 SAVED_POSTS_FILE = SAVED_DIR / "saved_posts.json"
 STATE_FILE = SAVED_DIR / "state.json"
 
 _URL_SHORTCODE_RE = re.compile(r"/(?:p|reel|tv|stories)/([A-Za-z0-9_-]+)")
 
 
-class SavedState(BaseModel):
+class SavedState:
     total: int = 0
     imported_at: str = ""
     source: str = ""
-    processed_ids: List[str] = Field(default_factory=list)
-    failed_ids: List[str] = Field(default_factory=list)
+    processed_ids: List[str] = None
+    failed_ids: List[str] = None
+
+    def __init__(self, **kwargs):
+        self.total = kwargs.get("total", 0)
+        self.imported_at = kwargs.get("imported_at", "")
+        self.source = kwargs.get("source", "")
+        self.processed_ids = kwargs.get("processed_ids", [])
+        self.failed_ids = kwargs.get("failed_ids", [])
+
+    def to_dict(self):
+        data = self.__dict__.copy()
+        data["processed_ids"] = list(data["processed_ids"])
+        data["failed_ids"] = list(data["failed_ids"])
+        return data
 
 
 def _ensure_dir() -> None:
@@ -35,15 +48,10 @@ def load_state() -> SavedState:
 def save_state(state: SavedState) -> None:
     _ensure_dir()
     with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state.model_dump(), f, indent=4)
+        json.dump(state.to_dict(), f, indent=4)
 
 
 def _extract_saved_posts_json_from_zip(zip_path: Path) -> bytes:
-    """Read ONLY the saved_posts.json entry from an Instagram export zip.
-
-    Everything else in the archive (personal data, media, logs) is never
-    touched or written to disk, so user data stays private.
-    """
     with zipfile.ZipFile(zip_path) as zf:
         candidates = [
             n
@@ -60,7 +68,6 @@ def _extract_saved_posts_json_from_zip(zip_path: Path) -> bytes:
 
 
 def import_saved_posts(path: Path) -> SavedState:
-    """Import saved posts from a .zip export or a raw saved_posts.json file."""
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
@@ -86,7 +93,6 @@ def import_saved_posts(path: Path) -> SavedState:
 
 
 def parse_saved_posts(data: Any) -> List[Dict[str, Any]]:
-    """Normalize any supported Instagram saved export shape into a flat post list."""
     if isinstance(data, dict):
         data = data.get("saved_posts") or data.get("saved_collections") or []
     if not isinstance(data, list):

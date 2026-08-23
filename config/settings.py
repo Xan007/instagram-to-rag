@@ -1,28 +1,27 @@
 import json
-from pathlib import Path
-from pydantic import BaseModel, Field
 
-CONFIG_DIR = Path.home() / ".instarag"
+from config.paths import CONFIG_DIR
+
 CONFIG_FILE = CONFIG_DIR / "settings.json"
 
-class AppSettings(BaseModel):
-    audio_only: bool = Field(default=False, description="Whether to only process audio globally")
-    engine: str = Field(default="gemini", description="Engine to use: 'gemini' or 'local_whisper'")
-    embed_provider: str = Field(default="gemini", description="Embedding provider: 'gemini' or 'local'")
-    ig_username: str = Field(default="", description="Your Instagram username (used for authenticated scraping to avoid 429 errors)")
-    scraper_engine: str = Field(default="apify", description="Scraper engine to use: 'apify' or 'instaloader'")
+class AppSettings:
+    audio_only: bool = False
+    engine: str = "gemini"
+    embed_provider: str = "gemini"
 
-def load_settings() -> AppSettings:
-    """Load settings from the configuration file."""
+    @classmethod
+    def from_dict(cls, data: dict):
+        obj = cls()
+        obj.__dict__.update({k: v for k, v in data.items() if hasattr(obj, k)})
+        return obj
+
+def load_settings():
     if not CONFIG_FILE.exists():
         return AppSettings()
-    
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-        return AppSettings(**data)
+        return AppSettings.from_dict(json.load(f))
 
-def save_settings(settings: AppSettings) -> None:
-    """Save settings to the configuration file."""
+def save_settings(settings) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings.model_dump(), f, indent=4)
+        json.dump(settings.__dict__, f, indent=4)
