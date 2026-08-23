@@ -1,0 +1,12 @@
+.git
+.venv
+.vscode
+__pycache__
+**/__pycache__
+*.pyc
+build
+dist
+data
+docs
+instarag.egg-info
+.env
