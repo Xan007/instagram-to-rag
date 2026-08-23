@@ -115,6 +115,12 @@ uv run python main.py query "..." --mode strict
 
 # Tune retrieval: more candidates, stricter trust threshold
 uv run python main.py query "..." --top-k 12 --min-score 0.5
+
+# Follow-up using a prior conversation (stateless: the file is client-side)
+uv run python main.py query "¿y para principiantes?" --history turns.json
+
+# Interactive multi-turn chat (history kept in-process, sent every turn)
+uv run python main.py chat --creator bejaranofit
 ```
 - Matches below `--min-score` are discarded; if nothing is relevant enough you get an honest "no encontré contenido" answer plus the closest indexed links.
 - The original post caption is included in the context alongside the extracted knowledge.

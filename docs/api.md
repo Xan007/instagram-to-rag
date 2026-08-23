@@ -35,7 +35,7 @@ By default the API is open (local tool). Set `INSTARAG_API_KEY` to require an
 | POST | `/saved/import` | Upload `.zip` export or `saved_posts.json` (sync) |
 | GET | `/saved/status` | Import/processing counters |
 | POST | `/saved/reset` | Clear saved history |
-| POST | `/query` | Grounded RAG query `{question, creator?, mode?, top_k?, min_score?}` — `mode`: `grounded_plus` (default, creator content + labeled general addendum) or `strict` (creators only); low-confidence retrievals return an honest "nothing relevant" answer with closest links instead of a generic refusal. Each entry in `sources` carries `cited: true/false` — retrieval returns a candidate pool and the model cites only what it used, so UIs should render cited sources as backing links and the rest as "also retrieved" |
+| POST | `/query` | Grounded RAG query `{question, creator?, mode?, top_k?, min_score?, history?}` — `mode`: `grounded_plus` (default) or `strict`; `history`: client-owned prior turns `[{role: "user"\|"assistant", content}]` (max 12, stateless — send the full conversation each time) enabling follow-ups; low-confidence retrievals return an honest "nothing relevant" answer with closest links instead of a generic refusal. Each entry in `sources` carries `cited: true/false` |
 
 Heavy operations return `202` with `{job_id, status_url}`. Jobs run serialized
 (one at a time); poll `GET /jobs/{id}` until `status` is `completed` or
