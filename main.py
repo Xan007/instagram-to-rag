@@ -346,6 +346,11 @@ def query(
     ),
     top_k: int = typer.Option(6, "--top-k", min=1, max=20, help="Number of posts to retrieve"),
     min_score: float = typer.Option(0.35, "--min-score", min=0.0, max=1.0, help="Minimum similarity score to trust a match"),
+    history_file: Optional[Path] = typer.Option(
+        None,
+        "--history",
+        help='JSON file with prior turns [{"role": "user|assistant", "content": "..."}] for follow-up questions',
+    ),
 ):
     """Ask a question based on the indexed knowledge base."""
     console.print(f"[bold blue]Querying RAG Engine for:[/bold blue] [italic]'{question}'[/italic]")
@@ -354,8 +359,20 @@ def query(
 
     from src.pipeline import query_knowledge
 
+    history_payload = None
+    if history_file:
+        import json
+
+        try:
+            history_payload = json.loads(history_file.read_text(encoding="utf-8"))
+        except Exception as e:
+            console.print(f"[bold red]Could not read history file:[/bold red] {e}")
+            raise typer.Exit(1)
+
     try:
-        result = query_knowledge(question, creator, top_k=top_k, min_score=min_score, mode=mode)
+        result = query_knowledge(
+            question, creator, top_k=top_k, min_score=min_score, mode=mode, history=history_payload
+        )
 
         console.print("\n[bold green]=== Answer ===[/bold green]\n")
         console.print(result["answer"])
@@ -376,6 +393,50 @@ def query(
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[bold red]Query failed:[/bold red] {e}")
+
+
+@app.command()
+def chat(
+    creator: Optional[str] = typer.Option(None, "--creator", "-c", help="Filter by specific Instagram creator"),
+    mode: str = typer.Option("grounded_plus", "--mode", help="'grounded_plus' or 'strict'"),
+):
+    """Interactive multi-turn conversation with the knowledge base.
+
+    History is kept in this process only and sent to the engine on every
+    turn (the API contract is stateless). Type 'exit' to leave.
+    """
+    from src.pipeline import query_knowledge
+
+    history = []
+    console.print("[bold blue]InstaRAG chat[/bold blue] — ask anything; 'exit' to quit.")
+    while True:
+        try:
+            question = console.input("\n[bold cyan]You:[/bold cyan] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if not question:
+            continue
+        if question.lower() in ("exit", "quit", "salir"):
+            break
+
+        try:
+            result = query_knowledge(question, creator, mode=mode, history=history)
+        except ValueError as e:
+            console.print(f"[bold red]{e}[/bold red]")
+            continue
+        except Exception as e:
+            console.print(f"[bold red]Query failed:[/bold red] {e}")
+            continue
+
+        console.print(f"\n[bold green]Assistant:[/bold green]\n{result['answer']}")
+        cited = [(i, s) for i, s in enumerate(result["sources"], start=1) if s.get("cited")]
+        for i, src in cited:
+            console.print(f"[dim][Source {i}] @{src['creator']}: {src['url']}[/dim]")
+
+        history.append({"role": "user", "content": question})
+        history.append({"role": "assistant", "content": result["answer"]})
+
+    console.print("[yellow]Chat closed.[/yellow]")
 
 
 def main():

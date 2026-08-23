@@ -7,12 +7,12 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from config import saved as saved_config
 from config.profiles import (
@@ -88,12 +88,18 @@ class SavedProcessIn(BaseModel):
     workers: int = 4
 
 
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=8000)
+
+
 class QueryIn(BaseModel):
     question: str
     creator: Optional[str] = None
     mode: str = "grounded_plus"
     top_k: int = 6
     min_score: float = 0.35
+    history: Optional[List[ChatTurn]] = None
 
 
 VALID_ANALYSIS_MODES = {"gemini", "local_whisper", "openai_whisper"}
@@ -357,6 +363,12 @@ def query(body: QueryIn, _: None = Depends(require_api_key)) -> Dict[str, Any]:
     if not 0 <= body.min_score <= 1:
         raise HTTPException(status_code=422, detail="min_score must be between 0 and 1.")
 
+    history_dicts = None
+    if body.history is not None:
+        if len(body.history) > 12:
+            raise HTTPException(status_code=422, detail="history supports at most 12 messages.")
+        history_dicts = [{"role": t.role, "content": t.content} for t in body.history]
+
     from src.pipeline import query_knowledge
 
     try:
@@ -366,6 +378,9 @@ def query(body: QueryIn, _: None = Depends(require_api_key)) -> Dict[str, Any]:
             top_k=body.top_k,
             min_score=body.min_score,
             mode=body.mode,
+            history=history_dicts,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Query failed: {e}")
