@@ -33,8 +33,8 @@ Handles saving/loading individual profile rules (username, specific interests, l
 Initially implemented entirely locally.
 #### `src/scraper/base.py`
 Abstract class defining the contract (e.g., `get_posts(username, limit, skip_ids)`).
-#### `src/scraper/local_instaloader.py`
-Uses `instaloader` to fetch post metadata without downloading video yet, yielding posts one by one.
+#### `src/scraper/apify_scraper.py`
+Apify Actors fetch post metadata (including direct media URLs) without downloading video yet, yielding posts one by one. No Instagram sessions or cookies are used anywhere; media is downloaded straight from actor-provided CDN URLs, with yt-dlp as fallback when only a post URL is known.
 
 ---
 
@@ -64,7 +64,10 @@ Takes user questions, fetches relevant context from Pinecone, and uses Gemini to
 ## Verification Plan
 
 ### Automated Tests
-- No tests for the moment, as requested by the user. 
+- `tests/` contains a pytest suite (unit tests for config/state parsing + HTTP API tests via FastAPI TestClient).
+- Tests redirect `INSTARAG_CONFIG_DIR` / `INSTARAG_DATA_DIR` to temp dirs (see `tests/conftest.py`) so they never touch real user data.
+- Run: `uv run pytest`
+- No network calls are made by the suite; provider-dependent paths (Gemini/Apify/Pinecone) are exercised only in manual E2E runs.
 
 ### Manual Verification
 1. Add a profile: `uv run main.py profile add <username> --interests "diet, recipes"`

@@ -8,6 +8,26 @@ APIFY_API_KEY=your_apify_api_token
 PINECONE_API_KEY=your_pinecone_api_key
 ```
 
+When using `instarag.exe`, each user must provide their own keys. Supported locations:
+- `.env` next to `instarag.exe`
+- `~/.instarag/.env` (recommended)
+- OS environment variables
+
+## Run as a global CLI (install once)
+
+From the repository root:
+
+```bash
+uv tool install --from . instarag
+uv tool update-shell
+```
+
+Restart your terminal and use:
+
+```bash
+instarag --help
+```
+
 ## Commands
 
 ### 1. Profile Management
@@ -62,20 +82,39 @@ uv run python main.py saved reset
 ```
 - All saved posts are processed regardless of profile interests.
 - Posts already indexed via any profile (or a previous saved run) are skipped automatically.
-- Instagram's data export contains NO media for saved posts, so each post's media is fetched from its URL: yt-dlp first (video + audio merged via ffmpeg), then an authenticated instaloader session as fallback for reels that require login; if neither works, the caption is analyzed instead.
-- To enable the instaloader fallback, create a session from your browser (Instagram blocks automated password logins with a generic 'fail' error, so use cookies instead):
-  1. Log into instagram.com in **Firefox** (desktop site) and complete any security check. Chrome/Edge don't work: their cookies are encrypted with Windows app-bound encryption that cannot be read externally.
-  2. **Close Firefox** (the cookie database must not be locked).
-  3. `uv run python main.py auth-session YOUR_USERNAME --browser firefox`.
-  4. `uv run python main.py config --ig-username YOUR_USERNAME`.
+- Instagram's data export contains NO media for saved posts, so each post's media is fetched from its URL with yt-dlp (video + audio merged via ffmpeg); if that fails, the caption is analyzed instead.
 - Indexed under the `saved` collection: `uv run python main.py query "..." --creator saved`.
+
+### Adding reels/posts by URL
+```bash
+# One or many URLs at once (uses apify/instagram-scraper; no login needed)
+uv run python main.py add-reel https://www.instagram.com/reel/ABC/ https://www.instagram.com/p/DEF/
+
+# Associate with a creator for duplicate tracking
+uv run python main.py add-reel <url> --creator bejaranofit
+
+# Analyze caption only (no media download)
+uv run python main.py add-reel <url> --caption-only
+```
+- Metadata and direct media URLs come from the official `apify/instagram-scraper` Actor; videos are downloaded straight over HTTP.
+- If Apify is unavailable, it falls back per URL to yt-dlp.
+- Via API: `POST /jobs/add-reel {"urls": ["...", "..."]}`.
 
 ### 4. Querying the Knowledge Base (RAG)
 Ask questions in natural language and receive grounded answers with direct links:
 ```bash
-# Query across all creators
+# Query across all creators (grounded_plus: creator content first; any general
+# knowledge added is clearly labeled and never attributed to the creators)
 uv run python main.py query "¿Cómo preparar una pasta alta en proteínas?"
 
 # Query filtered by a specific creator
 uv run python main.py query "¿Qué ejercicios recomienda para espalda?" --creator bejaranofit
+
+# Absolute provenance: refuse instead of supplementing with general knowledge
+uv run python main.py query "..." --mode strict
+
+# Tune retrieval: more candidates, stricter trust threshold
+uv run python main.py query "..." --top-k 12 --min-score 0.5
 ```
+- Matches below `--min-score` are discarded; if nothing is relevant enough you get an honest "no encontré contenido" answer plus the closest indexed links.
+- The original post caption is included in the context alongside the extracted knowledge.

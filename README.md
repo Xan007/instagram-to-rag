@@ -14,7 +14,7 @@ InstaRAG is a CLI tool that extracts knowledge from Instagram profiles and saved
 - Analyze Instagram profiles: posts, reels, and carousels.
 - Import your Instagram data export (saved posts) and process all of them.
 - Analyze video content with Gemini vision and transcribe audio with Whisper.
-- Download media with yt-dlp, with an instaloader fallback using your browser session.
+- Download media directly from actor-provided CDN URLs, or yt-dlp when only a post URL is available.
 - Ask questions in natural language with grounded answers and source citations.
 
 ## Tech Stack
@@ -22,7 +22,7 @@ InstaRAG is a CLI tool that extracts knowledge from Instagram profiles and saved
 - Python 3.14 and uv
 - Google Gemini (analysis and embeddings)
 - Pinecone (vector database)
-- yt-dlp, instaloader, Apify (Instagram content)
+- yt-dlp, Apify (Instagram content)
 - faster-whisper (audio transcription)
 - Typer + Rich (CLI)
 
@@ -32,15 +32,42 @@ InstaRAG is a CLI tool that extracts knowledge from Instagram profiles and saved
 uv sync
 ```
 
+### Install once, use from any folder (Windows CMD/PowerShell)
+
+```bash
+uv tool install --from . instarag
+uv tool update-shell
+```
+
+Then open a new terminal and run:
+
+```bash
+instarag --help
+```
+
+### Build a Windows `.exe`
+
+```bash
+uv tool run pyinstaller --onefile --name instarag main.py
+```
+
+Binary output:
+- `dist/instarag.exe`
+
 ## Configuration
 
-Create a `.env` file:
+Create a `.env` file with your own keys:
 
 ```
 GEMINI_API_KEY=your_key
 PINECONE_API_KEY=your_key
 PINECONE_INDEX_NAME=instarag
 ```
+
+For the `.exe`, each user should configure their own keys in one of these locations:
+- `.\.env` (same folder where `instarag.exe` is located)
+- `~/.instarag/.env` (recommended for persistent per-user setup)
+- System environment variables
 
 Global settings and profiles are stored in `~/.instarag`.
 
@@ -55,9 +82,6 @@ instarag run --username <your_target>
 instarag saved import export.zip
 instarag saved process
 
-# Optional: instaloader session from browser cookies (for media downloads)
-instarag auth-session your_username
-
 # Ask questions
 instarag query "your question here" --creator <your_target>
 ```
@@ -69,12 +93,20 @@ instarag query "your question here" --creator <your_target>
 | `profile` | Manage Instagram profiles |
 | `run` | Extract and index knowledge from a profile |
 | `saved` | Import and process saved posts |
-| `auth-session` | Create an instaloader session from browser cookies |
+| `add-reel` | Add one or more reels/posts by URL |
 | `query` | Ask the knowledge base |
 | `config` | Configure global settings |
+
+## Testing
+
+```bash
+uv sync --extra api   # once (installs API deps + pytest)
+uv run pytest         # unit + HTTP API tests (no network, isolated temp state)
+```
 
 ## Documentation
 
 - [Usage guide](docs/usage.md)
+- [HTTP API](docs/api.md)
 - [Architecture](docs/architecture.md)
 - [Indexer and RAG](docs/modules/indexer_and_rag.md)

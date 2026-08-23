@@ -11,7 +11,6 @@ flowchart LR
     A[Instagram Export .zip] -->|extract ONLY saved_posts.json, discard the rest| B[data/saved/saved_posts.json]
     B -->|parse: URL + caption + title| C[Dedup: skip IDs already in any profile or saved state]
     C -->|pending posts| D[Parallel workers x4: yt-dlp downloads reel media from each URL]
-    D -->|instaloader session fallback for login-required reels| D
     D -->|mp4 video| E[Gemini multimodal knowledge extraction]
     C -->|caption fallback if media fetch fails| E
     E --> F[Pinecone Indexer under `saved` collection]
@@ -24,7 +23,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A[User CLI: `main.py run <username>`] --> B[Scraper Module: Apify / Instaloader]
+    A[User CLI: `main.py run <username>`] --> B[Scraper Module: Apify Actors]
     B -->|Batch Post Metadata| C[Batch Filter: Gemini 3.5 Flash Lite]
     C -->|Matching Post IDs| D[Parallel Downloader: ThreadPoolExecutor - 4 Workers]
     D -->|Asynchronous Streaming Queue| E[Multimodal Analyzer: Gemini Multi-Model Fallback]
