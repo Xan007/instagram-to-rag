@@ -3,16 +3,60 @@ import time
 import warnings
 from typing import List, Dict
 from google import genai
-from dotenv import load_dotenv
+from config.env import load_runtime_env
 
 warnings.filterwarnings("ignore")
-load_dotenv()
+load_runtime_env()
 
 FALLBACK_MODELS = [
     "gemini-3.5-flash-lite",
     "gemini-3.7-flash",
     "gemini-3.6-flash"
 ]
+
+EXTRACTION_PROMPT_TEMPLATE = """
+You are an expert knowledge extractor building a permanent AI knowledge base from creator content.
+Analyze the provided media (video with audio, images, or slides) together with the post's caption.
+
+Original Caption:
+"{post_description}"
+
+Task:
+Extract ALL dense, factual, actionable knowledge shown OR spoken in the media, plus anything valuable from the caption.
+
+Hard rules:
+1. Copy every number EXACTLY as stated: reps x sets (e.g. 12x3), seconds, grams, ml, calories, temps, times. Never round, convert, or invent numbers.
+2. Transcribe the key points of the SPOKEN audio (steps, tips, warnings, corrections) - not filler.
+3. Read and include relevant ON-SCREEN text: overlays, lists, whiteboards, ingredient labels, exercise names.
+4. Write the output in the SAME language as the original caption.
+5. If the media adds nothing beyond the caption, say so explicitly on a "Notes:" line and extract only from the caption.
+6. No greetings, no conclusions, no fluff, no opinions of your own. Facts and instructions only.
+
+Output format (markdown, use these exact section headers; omit a section only if truly empty):
+
+## Topic
+(one line: what this post teaches)
+
+## Steps / Method
+(numbered steps or exercise list with exact sets/reps/durations/quantities)
+
+## Key Numbers
+(bullet list of every measurement, amount, dosage or timing mentioned)
+
+## On-Screen Text
+(text visible in frames/slides that is not already covered above)
+
+## Spoken Key Points
+(the most important things said in the audio)
+
+## Notes
+(equipment needed, common mistakes warned about, who it's for, or 'media adds nothing beyond caption')
+"""
+
+
+def build_extraction_prompt(post_description: str) -> str:
+    """Assemble the multimodal extraction prompt. Pure function."""
+    return EXTRACTION_PROMPT_TEMPLATE.format(post_description=post_description.strip())
 
 class GeminiAnalyzer:
     def __init__(self):
@@ -45,17 +89,7 @@ class GeminiAnalyzer:
                         
                 uploaded_files.append(gfile)
                 
-            prompt = f"""
-You are an expert knowledge extractor for an AI knowledge base.
-Review the provided media (images, slides, or video/audio) and the post's caption.
-
-Original Caption:
-"{post_description}"
-
-Task:
-Extract all dense, valuable factual knowledge, advice, recipes, exact ingredients/quantities, workout steps, or dietary rules presented across the visual content and audio.
-Provide a clear, structured markdown summary. Do not include introductory/concluding greetings or fluff. Focus on actionable information and details.
-"""
+            prompt = build_extraction_prompt(post_description)
             contents = uploaded_files + [prompt] if uploaded_files else [prompt]
             
             last_error = None
