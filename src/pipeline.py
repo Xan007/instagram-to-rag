@@ -70,7 +70,7 @@ def run_profile(
     progress(f"Max posts: {profile.max_posts}")
     progress(
         f"Already processed: {len(profile.processed_ids)} posts | "
-        f"Failed: {len(getattr(profile, 'failed_ids', []))} posts"
+        f"Failed: {len(profile.failed_ids)} posts"
     )
     if newer_than:
         progress(f"Date filter: only posts newer than {newer_than}")
@@ -179,7 +179,7 @@ def run_profile(
         progress(f"Pipeline error: {e}")
         return {
             "processed": len(new_processed_ids),
-            "failed": len(getattr(profile, "failed_ids", [])),
+            "failed": len(profile.failed_ids),
             "processed_ids": new_processed_ids,
             "total_processed": len(profile.processed_ids),
             "error": str(e),
@@ -187,7 +187,7 @@ def run_profile(
 
     return {
         "processed": len(new_processed_ids),
-        "failed": len(getattr(profile, "failed_ids", [])),
+        "failed": len(profile.failed_ids),
         "processed_ids": new_processed_ids,
         "total_processed": len(profile.processed_ids),
     }

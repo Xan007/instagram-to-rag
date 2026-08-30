@@ -115,7 +115,7 @@ def show_profile(
     console.print(f"  Analysis mode:  {profile.analysis_mode}")
     console.print(f"  Audio only:     {profile.audio_only}")
     console.print(f"  Processed:      {len(profile.processed_ids)} posts")
-    console.print(f"  Failed:         {len(getattr(profile, 'failed_ids', []))} posts")
+    console.print(f"  Failed:         {len(profile.failed_ids)} posts")
     if profile.failed_ids:
         console.print(f"  Failed IDs:     {', '.join(profile.failed_ids)}")
 
@@ -135,7 +135,7 @@ def list_all_profiles():
         if p:
             console.print(
                 f"  - @[bold]{p.username}[/bold] | mode: {p.analysis_mode} | audio_only: {p.audio_only} | "
-                f"processed: {len(p.processed_ids)} | failed: {len(getattr(p, 'failed_ids', []))}"
+                f"processed: {len(p.processed_ids)} | failed: {len(p.failed_ids)}"
             )
 
 
@@ -171,7 +171,7 @@ def reset_profile(
         console.print(f"[bold red]Profile @{username} not found.[/bold red]")
         raise typer.Exit(1)
 
-    total = len(profile.processed_ids) + len(getattr(profile, "failed_ids", []))
+    total = len(profile.processed_ids) + len(profile.failed_ids)
     if not yes:
         if not typer.confirm(f"Clear {total} tracked post(s) for @{username}?"):
             console.print("[yellow]Aborted.[/yellow]")

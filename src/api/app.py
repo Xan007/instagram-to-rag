@@ -139,7 +139,7 @@ def _profile_to_dict(p: ProfileConfig) -> Dict[str, Any]:
         "analysis_mode": p.analysis_mode,
         "audio_only": p.audio_only,
         "processed_count": len(p.processed_ids),
-        "failed_ids": getattr(p, "failed_ids", []),
+        "failed_ids": p.failed_ids,
     }
 
 
@@ -210,7 +210,7 @@ def reset_profile(username: str, _: None = Depends(require_api_key)) -> Dict[str
     profile = load_profile(username)
     if not profile:
         raise HTTPException(status_code=404, detail=f"Profile @{username} not found.")
-    cleared = len(profile.processed_ids) + len(getattr(profile, "failed_ids", []))
+    cleared = len(profile.processed_ids) + len(profile.failed_ids)
     profile.processed_ids = []
     profile.failed_ids = []
     save_profile(profile)
