@@ -45,3 +45,14 @@ class SavedState(Base):
     source = Column(String, default="")
     processed_ids = Column(JSON, default=list)
     failed_ids = Column(JSON, default=list)
+
+
+class ProcessedPost(Base):
+    __tablename__ = "processed_posts"
+
+    id = Column(String, primary_key=True)
+    url = Column(String, default="")
+    username = Column(String, default="")
+    type = Column(String, default="Post")
+    original_description = Column(Text, default="")
+    extracted_knowledge = Column(Text, default="")

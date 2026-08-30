@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from storage.models import Profile, SavedPost, SavedState, Setting
+from storage.models import ProcessedPost, Profile, SavedPost, SavedState, Setting
 
 
 # ── Settings ──────────────────────────────────────────────────────────────
@@ -95,3 +95,37 @@ def get_saved_state(db: Session) -> SavedState:
 
 def save_saved_state(db: Session, state: SavedState) -> None:
     db.commit()
+
+
+# ── Processed Posts ───────────────────────────────────────────────────────
+
+def get_processed_post(db: Session, post_id: str) -> Optional[ProcessedPost]:
+    return db.query(ProcessedPost).filter(ProcessedPost.id == post_id).first()
+
+
+def upsert_processed_post(db: Session, post: ProcessedPost) -> ProcessedPost:
+    existing = get_processed_post(db, post.id)
+    if existing:
+        existing.url = post.url
+        existing.username = post.username
+        existing.type = post.type
+        existing.original_description = post.original_description
+        existing.extracted_knowledge = post.extracted_knowledge
+        db.commit()
+        db.refresh(existing)
+        return existing
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+    return post
+
+
+def list_processed_posts(db: Session, username: Optional[str] = None) -> List[ProcessedPost]:
+    query = db.query(ProcessedPost)
+    if username:
+        query = query.filter(ProcessedPost.username == username)
+    return query.all()
+
+
+def count_processed_posts(db: Session) -> int:
+    return db.query(ProcessedPost).count()

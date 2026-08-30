@@ -1,8 +1,6 @@
-import json
 import logging
 import os
 import time
-from pathlib import Path
 from typing import Dict, Any
 from pinecone import Pinecone, ServerlessSpec
 from google import genai
@@ -16,26 +14,24 @@ INDEX_NAME = "instarag"
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM = 3072
 
+
 class PineconeIndexer:
-    def __init__(self, output_dir: str = "data/processed"):
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+    def __init__(self):
         # Initialize Google GenAI for Embeddings
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable is not set.")
         self.genai_client = genai.Client(api_key=api_key)
-        
+
         # Initialize Pinecone
         pinecone_key = os.getenv("PINECONE_API_KEY")
         if not pinecone_key:
             raise ValueError("PINECONE_API_KEY environment variable is not set.")
         self.pc = Pinecone(api_key=pinecone_key)
-        
+
         self._ensure_index_exists()
         self.index = self.pc.Index(INDEX_NAME)
-        
+
     def _ensure_index_exists(self):
         """Ensures the serverless Pinecone index exists with the correct dimensions."""
         existing_indexes = [i.name for i in self.pc.list_indexes()]
@@ -55,7 +51,7 @@ class PineconeIndexer:
                     break
                 logger.info("Waiting for Pinecone index to be ready...")
                 time.sleep(2)
-            
+
     def _get_embedding(self, text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
         """Generates embeddings using Gemini embedding model with retry for rate limits."""
         for attempt in range(3):
@@ -76,29 +72,33 @@ class PineconeIndexer:
         raise RuntimeError("Failed to generate embedding after 3 attempts.")
 
     def index_post(self, username: str, metadata: Dict[str, Any], extracted_text: str):
-        """
-        Embeds knowledge text, upserts into Pinecone, and saves local JSON backup.
-        """
+        """Embeds knowledge text, upserts into Pinecone, and saves to database."""
+        from storage.db import get_session
+        from storage.models import ProcessedPost
+        import storage.repositories as repo
+
         post_id = metadata["id"]
         post_url = metadata["url"]
-        
-        # 1. Save local backup JSON
-        document = {
-            "id": post_id,
-            "url": post_url,
-            "username": username,
-            "type": metadata.get("type", "Post"),
-            "original_description": metadata.get("description", ""),
-            "extracted_knowledge": extracted_text
-        }
-        file_path = self.output_dir / f"{post_id}.json"
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(document, f, indent=4, ensure_ascii=False)
-            
+
+        # 1. Save to database
+        db = get_session()
+        try:
+            post = ProcessedPost(
+                id=post_id,
+                url=post_url,
+                username=username,
+                type=metadata.get("type", "Post"),
+                original_description=metadata.get("description", ""),
+                extracted_knowledge=extracted_text,
+            )
+            repo.upsert_processed_post(db, post)
+        finally:
+            db.close()
+
         # 2. Prepare text for embedding
         embed_input = f"Creator: @{username}\nURL: {post_url}\nKnowledge Summary:\n{extracted_text}"
         vector_values = self._get_embedding(embed_input)
-        
+
         # 3. Upsert to Pinecone
         vector_id = f"{username}_{post_id}"
         # Keep metadata within 40KB limits
@@ -110,7 +110,7 @@ class PineconeIndexer:
             "original_description": metadata.get("description", "")[:1000],
             "extracted_knowledge": extracted_text[:8000]
         }
-        
+
         self.index.upsert(
             vectors=[
                 {
@@ -120,4 +120,4 @@ class PineconeIndexer:
                 }
             ]
         )
-        logger.info("-> Indexed @%s post %s into Pinecone & saved %s", username, post_id, file_path)
+        logger.info("-> Indexed @%s post %s into Pinecone & DB", username, post_id)
