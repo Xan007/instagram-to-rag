@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import warnings
@@ -7,6 +8,8 @@ from config.env import load_runtime_env
 
 warnings.filterwarnings("ignore")
 load_runtime_env()
+
+logger = logging.getLogger(__name__)
 
 FALLBACK_MODELS = [
     "gemini-3.5-flash-lite",
@@ -74,17 +77,17 @@ class GeminiAnalyzer:
         try:
             for item in media_files:
                 path = item["path"]
-                print(f"Uploading {item['type']} {path} to Gemini...")
+                logger.info("Uploading %s %s to Gemini...", item["type"], path)
                 gfile = self.client.files.upload(file=path)
                 
                 if item["type"] == "video":
                     while gfile.state.name == "PROCESSING":
-                        print("Waiting for video processing...")
+                        logger.info("Waiting for video processing...")
                         time.sleep(2)
                         gfile = self.client.files.get(name=gfile.name)
                         
                     if gfile.state.name == "FAILED":
-                        print(f"Warning: processing failed for {path}")
+                        logger.warning("Processing failed for %s", path)
                         continue
                         
                 uploaded_files.append(gfile)
@@ -103,10 +106,10 @@ class GeminiAnalyzer:
                         last_error = e
                         err_str = str(e)
                         if "503" in err_str or "UNAVAILABLE" in err_str:
-                            print(f"Model {model_name} is experiencing 503 high demand. Trying next model...")
+                            logger.info("Model %s is experiencing 503 high demand. Trying next model...", model_name)
                             break # Fallback to next model immediately
                         elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                            print(f"Rate limit on {model_name}. Waiting 10s...")
+                            logger.info("Rate limit on %s. Waiting 10s...", model_name)
                             time.sleep(10)
                         else:
                             break

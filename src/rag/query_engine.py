@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import time
@@ -14,6 +15,8 @@ from src.rag.conversation import (
 
 warnings.filterwarnings("ignore")
 load_runtime_env()
+
+logger = logging.getLogger(__name__)
 
 INDEX_NAME = "instarag"
 EMBEDDING_MODEL = "gemini-embedding-001"
@@ -241,7 +244,7 @@ User Question:
             except Exception as e:
                 err_str = str(e)
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str or "UNAVAILABLE" in err_str:
-                    print(f"Rate limit reached on answer generation. Retrying in 10s ({attempt + 1}/3)...")
+                    logger.info("Rate limit reached on answer generation. Retrying in 10s (%d/3)...", attempt + 1)
                     time.sleep(10)
                 else:
                     raise e

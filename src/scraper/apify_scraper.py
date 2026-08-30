@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -7,6 +8,8 @@ from apify_client import ApifyClient
 from config.env import load_runtime_env
 
 load_runtime_env()
+
+logger = logging.getLogger(__name__)
 
 ACTOR_ID = "sones/instagram-posts-scraper-lowcost"
 ACTOR_MAX_POSTS_PER_PROFILE = 500
@@ -54,7 +57,7 @@ def _media_items_for(node: Dict[str, Any], media_type: int, warn_prefix: str = "
             img = _best_image_url(node)
             if img:
                 items.append({"type": "image", "url": img})
-                print(f"[scrape] WARNING {warn_prefix}: video has no video source, falling back to thumbnail")
+                logger.warning("%s: video has no video source, falling back to thumbnail", warn_prefix)
     elif media_type == 8:
         for child in node.get("carousel_media") or []:
             child_type = child.get("media_type", 1)
@@ -132,13 +135,13 @@ class ApifyScraper:
         if self.only_posts_newer_than:
             run_input["newerThan"] = self.only_posts_newer_than
 
-        print(f"[scrape] Calling {ACTOR_ID} for @{username}")
-        print(f"[scrape] Requesting up to {requested} posts (target: {limit} new + {len(skip_set)} already processed)")
+        logger.info("Calling %s for @%s", ACTOR_ID, username)
+        logger.info("Requesting up to %d posts (target: %d new + %d already processed)", requested, limit, len(skip_set))
         if self.only_posts_newer_than:
-            print(f"[scrape] Date filter: only posts newer than {self.only_posts_newer_than}")
+            logger.info("Date filter: only posts newer than %s", self.only_posts_newer_than)
         if limit + len(skip_set) > ACTOR_MAX_POSTS_PER_PROFILE:
-            print(f"[scrape] WARNING: postsPerProfile is capped at {ACTOR_MAX_POSTS_PER_PROFILE} by the actor; "
-                  f"may return fewer than {limit} new posts after skipping.")
+            logger.warning("postsPerProfile is capped at %d by the actor; may return fewer than %d new posts after skipping.",
+                          ACTOR_MAX_POSTS_PER_PROFILE, limit)
 
         run = self.client.actor(ACTOR_ID).call(run_input=run_input)
 
@@ -159,13 +162,13 @@ class ApifyScraper:
             if shortcode in skip_set:
                 skipped_processed += 1
                 if self.verbose:
-                    print(f"[scrape] SKIP {shortcode}: already processed")
+                    logger.debug("SKIP %s: already processed", shortcode)
                 continue
 
             if not passes_newer_than(item, cutoff_seconds):
                 skipped_old += 1
                 if self.verbose:
-                    print(f"[scrape] SKIP {shortcode}: older than newerThan boundary")
+                    logger.debug("SKIP %s: older than newerThan boundary", shortcode)
                 continue
 
             media_type = item.get("media_type", 1)
@@ -179,7 +182,7 @@ class ApifyScraper:
             if self.verbose:
                 media_desc = ", ".join(m["type"] for m in media_items) or "NO MEDIA"
                 post_type = MEDIA_TYPE_TO_POST_TYPE.get(media_type, "Image")
-                print(f"[scrape] GOT {shortcode}: type={post_type}, media=[{media_desc}]")
+                logger.debug("GOT %s: type=%s, media=[%s]", shortcode, post_type, media_desc)
 
             metadata = {
                 "id": shortcode,
@@ -193,15 +196,16 @@ class ApifyScraper:
             count += 1
 
         if self.verbose and skipped_old:
-            print(f"[scrape] Skipped {skipped_old} post(s) older than the newerThan boundary.")
+            logger.info("Skipped %d post(s) older than the newerThan boundary.", skipped_old)
 
         if count == 0:
             summary = self._read_run_summary(run)
             if summary:
-                print(f"[scrape] RUN_SUMMARY (diagnostics): {json.dumps(summary, default=str)[:800]}")
+                logger.debug("RUN_SUMMARY (diagnostics): %s", json.dumps(summary, default=str)[:800])
 
-        print(f"[scrape] Done: yielded {count} new post(s), skipped {skipped_processed} already processed, "
-              f"{skipped_old} older than cutoff, {no_media} post(s) without media URLs.")
+        logger.info("Done: yielded %d new post(s), skipped %d already processed, "
+                    "%d older than cutoff, %d post(s) without media URLs.",
+                    count, skipped_processed, skipped_old, no_media)
 
     def _read_run_summary(self, run: Any) -> Optional[Dict[str, Any]]:
         """Fetch the actor's RUN_SUMMARY record from the run's key-value store."""
@@ -215,5 +219,5 @@ class ApifyScraper:
                 return None
             return self.client.key_value_store(kvs_id).get_record("RUN_SUMMARY")
         except Exception as e:
-            print(f"[scrape] Could not read RUN_SUMMARY: {e}")
+            logger.warning("Could not read RUN_SUMMARY: %s", e)
             return None

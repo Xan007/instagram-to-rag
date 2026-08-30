@@ -1,5 +1,6 @@
-import os
 import json
+import logging
+import os
 import time
 import warnings
 from typing import List, Dict, Set
@@ -8,6 +9,8 @@ from config.env import load_runtime_env
 
 warnings.filterwarnings("ignore")
 load_runtime_env()
+
+logger = logging.getLogger(__name__)
 
 FALLBACK_MODELS = [
     "gemini-3.5-flash-lite",
@@ -35,10 +38,10 @@ class InterestFilter:
                     last_error = e
                     err_str = str(e)
                     if "503" in err_str or "UNAVAILABLE" in err_str:
-                        print(f"Model {model_name} is experiencing 503 high demand. Trying next model...")
+                        logger.info("Model %s is experiencing 503 high demand. Trying next model...", model_name)
                         break # Try next fallback model immediately
                     elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                        print(f"Rate limit on {model_name}. Waiting 10s...")
+                        logger.info("Rate limit on %s. Waiting 10s...", model_name)
                         time.sleep(10)
                     else:
                         break
@@ -93,7 +96,7 @@ If none match, respond with: []
                     for aid in accepted_ids:
                         matching_ids.add(str(aid))
             except Exception as e:
-                print(f"Warning: Batch filter failed on chunk ({e}). Defaulting to include all chunk items.")
+                logger.warning("Batch filter failed on chunk (%s). Defaulting to include all chunk items.", e)
                 for p in chunk:
                     matching_ids.add(p["id"])
                     

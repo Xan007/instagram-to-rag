@@ -1,4 +1,5 @@
 import glob
+import logging
 import os
 import uuid
 import warnings
@@ -6,6 +7,8 @@ from typing import List, Dict, Optional
 from yt_dlp import YoutubeDL
 
 warnings.filterwarnings("ignore")
+
+logger = logging.getLogger(__name__)
 
 
 class WhisperAnalyzer:
@@ -98,10 +101,10 @@ class WhisperAnalyzer:
                     local_path = self._download_audio(source)
                 txt = self._transcribe(local_path)
                 transcriptions.append(txt)
-                print(f"[whisper] Transcribed {source}")
+                logger.info("Transcribed %s", source)
             except Exception as e:
                 last_error = e
-                print(f"[whisper] ERROR transcribing {source}: {e}")
+                logger.error("ERROR transcribing %s: %s", source, e)
             finally:
                 if local_path != source and os.path.exists(local_path):
                     os.remove(local_path)

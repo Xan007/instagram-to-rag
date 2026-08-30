@@ -1,10 +1,13 @@
 """Background job manager for long-running pipeline operations."""
+import logging
 import threading
 import time
 import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class Job:
@@ -24,7 +27,7 @@ class Job:
         with self._lock:
             entry = f"[{time.strftime('%H:%M:%S')}] {message}"
             self._log.append(entry)
-        print(f"[job {self.id}] {entry}", flush=True)
+        logger.info("[job %s] %s", self.id, entry)
 
     def tail(self, limit: int = 200) -> list:
         with self._lock:

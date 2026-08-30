@@ -1,7 +1,10 @@
+import logging
 import os
 import requests
 from pathlib import Path
 from typing import List, Dict
+
+logger = logging.getLogger(__name__)
 
 class MediaDownloader:
     def __init__(self, download_dir: str = "data/raw"):
@@ -33,7 +36,7 @@ class MediaDownloader:
                         for chunk in response.iter_content(chunk_size=8192):
                             f.write(chunk)
                 except Exception as e:
-                    print(f"Error downloading {m_url}: {e}")
+                    logger.error("Error downloading %s: %s", m_url, e)
                     continue
                     
             downloaded.append({"type": m_type, "path": str(file_path.absolute())})

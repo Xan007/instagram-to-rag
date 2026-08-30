@@ -1,5 +1,6 @@
-import os
 import json
+import logging
+import os
 import time
 from pathlib import Path
 from typing import Dict, Any
@@ -8,6 +9,8 @@ from google import genai
 from config.env import load_runtime_env
 
 load_runtime_env()
+
+logger = logging.getLogger(__name__)
 
 INDEX_NAME = "instarag"
 EMBEDDING_MODEL = "gemini-embedding-001"
@@ -37,7 +40,7 @@ class PineconeIndexer:
         """Ensures the serverless Pinecone index exists with the correct dimensions."""
         existing_indexes = [i.name for i in self.pc.list_indexes()]
         if INDEX_NAME not in existing_indexes:
-            print(f"Creating Pinecone Index '{INDEX_NAME}' with dimension {EMBEDDING_DIM}...")
+            logger.info("Creating Pinecone Index '%s' with dimension %d...", INDEX_NAME, EMBEDDING_DIM)
             self.pc.create_index(
                 name=INDEX_NAME,
                 dimension=EMBEDDING_DIM,
@@ -59,7 +62,7 @@ class PineconeIndexer:
             except Exception as e:
                 err_str = str(e)
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                    print(f"Embedding rate limit reached. Waiting 15s before retry ({attempt + 1}/3)...")
+                    logger.info("Embedding rate limit reached. Waiting 15s before retry (%d/3)...", attempt + 1)
                     time.sleep(15)
                 else:
                     raise e
@@ -110,4 +113,4 @@ class PineconeIndexer:
                 }
             ]
         )
-        print(f"-> Indexed @{username} post {post_id} into Pinecone & saved {file_path}")
+        logger.info("-> Indexed @%s post %s into Pinecone & saved %s", username, post_id, file_path)
