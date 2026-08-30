@@ -47,7 +47,14 @@ class PineconeIndexer:
                 metric="cosine",
                 spec=ServerlessSpec(cloud="aws", region="us-east-1")
             )
-            time.sleep(5)
+            # Poll until the index is ready
+            while True:
+                desc = self.pc.describe_index(name=INDEX_NAME)
+                status = desc.get("status", {})
+                if status.get("ready"):
+                    break
+                logger.info("Waiting for Pinecone index to be ready...")
+                time.sleep(2)
             
     def _get_embedding(self, text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
         """Generates embeddings using Gemini embedding model with retry for rate limits."""
