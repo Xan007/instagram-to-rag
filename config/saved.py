@@ -1,6 +1,7 @@
 import json
 import re
 import zipfile
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -13,25 +14,16 @@ STATE_FILE = SAVED_DIR / "state.json"
 _URL_SHORTCODE_RE = re.compile(r"/(?:p|reel|tv|stories)/([A-Za-z0-9_-]+)")
 
 
+@dataclass
 class SavedState:
     total: int = 0
     imported_at: str = ""
     source: str = ""
-    processed_ids: List[str] = None
-    failed_ids: List[str] = None
-
-    def __init__(self, **kwargs):
-        self.total = kwargs.get("total", 0)
-        self.imported_at = kwargs.get("imported_at", "")
-        self.source = kwargs.get("source", "")
-        self.processed_ids = kwargs.get("processed_ids", [])
-        self.failed_ids = kwargs.get("failed_ids", [])
+    processed_ids: List[str] = field(default_factory=list)
+    failed_ids: List[str] = field(default_factory=list)
 
     def to_dict(self):
-        data = self.__dict__.copy()
-        data["processed_ids"] = list(data["processed_ids"])
-        data["failed_ids"] = list(data["failed_ids"])
-        return data
+        return asdict(self)
 
 
 def _ensure_dir() -> None:
