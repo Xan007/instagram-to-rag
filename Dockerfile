@@ -28,4 +28,4 @@ ENV INSTARAG_PORT=8000
 VOLUME ["/data"]
 EXPOSE 8000
 
-CMD ["uv", "run", "api.py"]
+CMD ["uv", "run", "src/api/main.py"]

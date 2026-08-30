@@ -22,7 +22,7 @@ dependencies = [
 
 [project.scripts]
 instarag = "main:main"
-instarag-api = "api:main"
+instarag-api = "src.api.main:main"
 
 [dependency-groups]
 dev = [
