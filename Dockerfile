@@ -1,8 +1,10 @@
-FROM python:3.14-slim
+FROM python:3.14-slim AS base
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
@@ -11,7 +13,7 @@ COPY src ./src
 COPY config ./config
 COPY api.py main.py ./
 
-RUN pip install --no-cache-dir ".[api]" \
+RUN uv sync --no-dev --group api \
     && useradd -m instarag \
     && mkdir -p /data \
     && chown -R instarag:instarag /app /data
@@ -26,4 +28,4 @@ ENV INSTARAG_PORT=8000
 VOLUME ["/data"]
 EXPOSE 8000
 
-CMD ["python", "api.py"]
+CMD ["uv", "run", "api.py"]
