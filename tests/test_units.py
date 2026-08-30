@@ -89,14 +89,15 @@ class TestAppSettings:
         assert not hasattr(settings, "future_field")
         assert not hasattr(settings, "ig_username")
 
-    def test_legacy_settings_file_loads_cleanly(self):
-        from config.settings import CONFIG_FILE
+    def test_settings_roundtrip(self):
+        from config.settings import load_settings, save_settings
 
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text(
-            json.dumps({"engine": "gemini", "scraper_engine": "instaloader", "ig_username": "old"}),
-            encoding="utf-8",
-        )
-        settings = AppSettings.from_dict(json.loads(CONFIG_FILE.read_text(encoding="utf-8")))
-        assert settings.engine == "gemini"
-        assert not hasattr(settings, "scraper_engine")
+        original = load_settings()
+        try:
+            save_settings(AppSettings(engine="local_whisper", embed_provider="local", audio_only=True))
+            loaded = load_settings()
+            assert loaded.engine == "local_whisper"
+            assert loaded.embed_provider == "local"
+            assert loaded.audio_only is True
+        finally:
+            save_settings(original)

@@ -1,14 +1,11 @@
-import json
 from dataclasses import asdict, dataclass
 from typing import get_type_hints
-
-from config.paths import CONFIG_DIR
-
-CONFIG_FILE = CONFIG_DIR / "settings.json"
 
 VALID_ENGINES = {"gemini", "local_whisper"}
 VALID_EMBED_PROVIDERS = {"gemini", "local"}
 VALID_ANALYSIS_MODES = {"gemini", "local_whisper", "openai_whisper"}
+
+SETTINGS_KEY = "app_settings"
 
 
 @dataclass
@@ -24,14 +21,29 @@ class AppSettings:
         return cls(**filtered)
 
 
+def _repo():
+    """Lazy import to avoid creating engine at module load time."""
+    import storage.repositories as repo
+    return repo
+
+
+def _db():
+    from storage.db import get_session
+    return get_session()
+
+
 def load_settings() -> AppSettings:
-    if not CONFIG_FILE.exists():
-        return AppSettings()
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return AppSettings.from_dict(json.load(f))
+    db = _db()
+    try:
+        data = _repo().get_setting(db, SETTINGS_KEY)
+        return AppSettings.from_dict(data) if data else AppSettings()
+    finally:
+        db.close()
 
 
 def save_settings(settings: AppSettings) -> None:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(asdict(settings), f, indent=4)
+    db = _db()
+    try:
+        _repo().set_setting(db, SETTINGS_KEY, asdict(settings))
+    finally:
+        db.close()

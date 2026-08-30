@@ -320,18 +320,17 @@ async def saved_import(file: UploadFile = File(...), _: None = Depends(require_a
 
 @app.get("/saved/status", tags=["saved"])
 def saved_status(_: None = Depends(require_api_key)) -> Dict[str, Any]:
-    if not saved_config.SAVED_POSTS_FILE.exists():
-        return {"imported": False}
     state = saved_config.load_state()
-    total = state.total if saved_config.STATE_FILE.exists() else 0
+    if state.total == 0:
+        return {"imported": False}
     return {
         "imported": True,
-        "total": total,
+        "total": state.total,
         "imported_at": state.imported_at,
         "source": state.source,
         "processed": len(state.processed_ids),
         "failed": len(state.failed_ids),
-        "pending": max(total - len(state.processed_ids), 0),
+        "pending": max(state.total - len(state.processed_ids), 0),
         "failed_ids": state.failed_ids,
     }
 

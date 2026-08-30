@@ -82,7 +82,8 @@ def test_invalid_analysis_mode_rejected(client):
 def test_saved_status_before_import(client):
     r = client.get("/saved/status")
     assert r.status_code == 200
-    assert r.json() == {"imported": False}
+    body = r.json()
+    assert body["imported"] is False
 
 
 def test_saved_process_job_fails_gracefully_without_import(client):

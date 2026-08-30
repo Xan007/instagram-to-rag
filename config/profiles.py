@@ -1,11 +1,5 @@
-import json
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import List, Optional
-
-from config.paths import CONFIG_DIR
-
-PROFILES_DIR = CONFIG_DIR / "profiles"
 
 
 @dataclass
@@ -21,31 +15,72 @@ class ProfileConfig:
     def to_dict(self):
         return asdict(self)
 
-def _get_profile_path(username: str) -> Path:
-    return PROFILES_DIR / f"{username}.json"
+
+def _repo():
+    """Lazy import to avoid creating engine at module load time."""
+    import storage.repositories as repo
+    return repo
+
+
+def _db():
+    from storage.db import get_session
+    return get_session()
+
+
+def _to_model(profile: ProfileConfig):
+    from storage.models import Profile
+    return Profile(
+        username=profile.username,
+        interests=profile.interests,
+        max_posts=profile.max_posts,
+        processed_ids=profile.processed_ids,
+        analysis_mode=profile.analysis_mode,
+        audio_only=profile.audio_only,
+        failed_ids=profile.failed_ids,
+    )
+
+
+def _from_model(model) -> ProfileConfig:
+    return ProfileConfig(
+        username=model.username,
+        interests=model.interests or "",
+        max_posts=model.max_posts or 50,
+        processed_ids=model.processed_ids or [],
+        analysis_mode=model.analysis_mode or "gemini",
+        audio_only=model.audio_only or False,
+        failed_ids=model.failed_ids or [],
+    )
+
 
 def load_profile(username: str) -> Optional[ProfileConfig]:
-    path = _get_profile_path(username)
-    if not path.exists():
-        return None
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return ProfileConfig(**data)
+    db = _db()
+    try:
+        model = _repo().get_profile(db, username)
+        return _from_model(model) if model else None
+    finally:
+        db.close()
+
 
 def save_profile(profile: ProfileConfig) -> None:
-    PROFILES_DIR.mkdir(parents=True, exist_ok=True)
-    path = _get_profile_path(profile.username)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(profile.to_dict(), f, indent=4, ensure_ascii=False)
+    db = _db()
+    try:
+        model = _to_model(profile)
+        _repo().upsert_profile(db, model)
+    finally:
+        db.close()
+
 
 def list_profiles() -> List[str]:
-    if not PROFILES_DIR.exists():
-        return []
-    return [f.stem for f in PROFILES_DIR.glob("*.json")]
+    db = _db()
+    try:
+        return [p.username for p in _repo().list_profiles(db)]
+    finally:
+        db.close()
+
 
 def delete_profile(username: str) -> bool:
-    path = _get_profile_path(username)
-    if not path.exists():
-        return False
-    path.unlink()
-    return True
+    db = _db()
+    try:
+        return _repo().delete_profile(db, username)
+    finally:
+        db.close()

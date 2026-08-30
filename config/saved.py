@@ -1,16 +1,7 @@
-import json
-import re
-import zipfile
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List
+from typing import List, Optional
 
-from config.paths import SAVED_DIR
 from config.utils import URL_SHORTCODE_RE
-
-SAVED_POSTS_FILE = SAVED_DIR / "saved_posts.json"
-STATE_FILE = SAVED_DIR / "state.json"
 
 
 @dataclass
@@ -25,24 +16,48 @@ class SavedState:
         return asdict(self)
 
 
-def _ensure_dir() -> None:
-    SAVED_DIR.mkdir(parents=True, exist_ok=True)
+def _repo():
+    """Lazy import to avoid creating engine at module load time."""
+    import storage.repositories as repo
+    return repo
+
+
+def _db():
+    from storage.db import get_session
+    return get_session()
 
 
 def load_state() -> SavedState:
-    if not STATE_FILE.exists():
-        return SavedState()
-    with open(STATE_FILE, "r", encoding="utf-8") as f:
-        return SavedState(**json.load(f))
+    db = _db()
+    try:
+        model = _repo().get_saved_state(db)
+        return SavedState(
+            total=model.total or 0,
+            imported_at=model.imported_at or "",
+            source=model.source or "",
+            processed_ids=model.processed_ids or [],
+            failed_ids=model.failed_ids or [],
+        )
+    finally:
+        db.close()
 
 
 def save_state(state: SavedState) -> None:
-    _ensure_dir()
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state.to_dict(), f, indent=4)
+    db = _db()
+    try:
+        model = _repo().get_saved_state(db)
+        model.total = state.total
+        model.imported_at = state.imported_at
+        model.source = state.source
+        model.processed_ids = state.processed_ids
+        model.failed_ids = state.failed_ids
+        _repo().save_saved_state(db, model)
+    finally:
+        db.close()
 
 
-def _extract_saved_posts_json_from_zip(zip_path: Path) -> bytes:
+def _extract_saved_posts_json_from_zip(zip_path):
+    import zipfile
     with zipfile.ZipFile(zip_path) as zf:
         candidates = [
             n
@@ -58,7 +73,11 @@ def _extract_saved_posts_json_from_zip(zip_path: Path) -> bytes:
         return zf.read(name)
 
 
-def import_saved_posts(path: Path) -> SavedState:
+def import_saved_posts(path) -> SavedState:
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
@@ -72,24 +91,48 @@ def import_saved_posts(path: Path) -> SavedState:
     data = json.loads(raw.decode("utf-8"))
     items = parse_saved_posts(data)
 
-    _ensure_dir()
-    SAVED_POSTS_FILE.write_bytes(raw)
+    # Store posts in database
+    from storage.models import SavedPost
+    db = _db()
+    try:
+        models = [
+            SavedPost(
+                id=item["id"],
+                url=item["url"],
+                caption=item["caption"],
+                title=item["title"],
+                timestamp=item.get("timestamp", 0),
+            )
+            for item in items
+        ]
+        _repo().upsert_saved_posts_bulk(db, models)
 
-    state = load_state()
-    state.total = len(items)
-    state.imported_at = datetime.now().isoformat(timespec="seconds")
-    state.source = source
-    save_state(state)
-    return state
+        state = _repo().get_saved_state(db)
+        state.total = len(items)
+        state.imported_at = datetime.now().isoformat(timespec="seconds")
+        state.source = source
+        _repo().save_saved_state(db, state)
+
+        return SavedState(
+            total=state.total,
+            imported_at=state.imported_at,
+            source=state.source,
+            processed_ids=state.processed_ids or [],
+            failed_ids=state.failed_ids or [],
+        )
+    finally:
+        db.close()
 
 
-def parse_saved_posts(data: Any) -> List[Dict[str, Any]]:
+def parse_saved_posts(data) -> List[dict]:
+    import json as _json
+
     if isinstance(data, dict):
         data = data.get("saved_posts") or data.get("saved_collections") or []
     if not isinstance(data, list):
         raise ValueError("Unrecognized saved_posts.json format.")
 
-    posts: List[Dict[str, Any]] = []
+    posts: List[dict] = []
     for item in data:
         if not isinstance(item, dict):
             continue

@@ -441,6 +441,8 @@ def chat(
 
 
 def main():
+    from storage.db import init_db
+    init_db()
     app()
 
 

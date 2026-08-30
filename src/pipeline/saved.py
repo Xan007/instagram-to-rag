@@ -1,12 +1,33 @@
 """Process imported saved posts through the pipeline."""
-import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
-from config.saved import SAVED_POSTS_FILE, load_state, parse_saved_posts, save_state
+from config.saved import load_state, parse_saved_posts, save_state
 from config.profiles import list_profiles, load_profile
+from storage.db import get_session
+from storage.models import SavedPost
+import storage.repositories as repo
 from src.pipeline._common import Progress, download_with_ytdlp, echo
+
+
+def _get_saved_posts_from_db() -> List[Dict[str, Any]]:
+    """Get all saved posts from database as dicts."""
+    db = get_session()
+    try:
+        posts = repo.list_saved_posts(db)
+        return [
+            {
+                "id": p.id,
+                "url": p.url,
+                "caption": p.caption or "",
+                "title": p.title or "",
+                "timestamp": p.timestamp or 0,
+            }
+            for p in posts
+        ]
+    finally:
+        db.close()
 
 
 def process_saved(
@@ -20,11 +41,10 @@ def process_saved(
     from src.analyzer.gemini_analyzer import GeminiAnalyzer
     from src.indexer.pinecone_indexer import PineconeIndexer
 
-    if not SAVED_POSTS_FILE.exists():
+    items = _get_saved_posts_from_db()
+    if not items:
         raise ValueError("No saved posts imported. Run 'saved import' first.")
 
-    data = json.loads(SAVED_POSTS_FILE.read_text(encoding="utf-8"))
-    items = parse_saved_posts(data)
     state = load_state()
 
     profile_ids: set = set()
