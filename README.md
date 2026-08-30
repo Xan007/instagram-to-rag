@@ -21,12 +21,14 @@ No Instagram sessions or cookies are used anywhere: media comes from actor-provi
 - **Grounded RAG answers** — citations with `[Source N]`, `cited` flag per source, dual answer mode (`grounded_plus` default / `strict`), similarity threshold, tunable retrieval.
 - **Multi-turn conversations** — stateless history contract; follow-ups like "¿y para principiantes?" are condensed into standalone search queries before retrieval.
 - **HTTP API** — FastAPI with background jobs (serialized worker, live logs echoed to console) and auto-generated OpenAPI docs at `/docs`.
+- **Database backend** — SQLAlchemy with SQLite (default), easily switchable to PostgreSQL/Supabase via `INSTARAG_DATABASE_URL`.
 
 ## Tech Stack
 
 - Python 3.14 + uv
 - Google Gemini — multimodal extraction, embeddings (`gemini-embedding-001`), answer generation
 - Pinecone serverless — vector database
+- SQLAlchemy + SQLite — relational storage (profiles, settings, saved posts, processed knowledge)
 - Apify actors — `sones/instagram-posts-scraper-lowcost` (profiles), `apify/instagram-scraper` (URLs)
 - FastAPI + Uvicorn (HTTP API) · Typer + Rich (CLI)
 - yt-dlp (fallback downloads) · faster-whisper / OpenAI Whisper (optional audio transcription)
@@ -79,6 +81,7 @@ Optional API settings:
 | `INSTARAG_DATA_DIR` | Media/state root (default `./data`) |
 | `INSTARAG_CONFIG_DIR` | Settings/profiles root (default `~/.instarag`) |
 | `INSTARAG_HOST` / `INSTARAG_PORT` | API bind address |
+| `INSTARAG_DATABASE_URL` | Database URL (default `sqlite://~/.instarag/instarag.db`). Use `postgresql://...` for PostgreSQL |
 
 For the `.exe`, each user should configure their own keys in one of these locations:
 - `.\.env` (same folder where `instarag.exe` is located)
@@ -110,7 +113,7 @@ instarag chat --creator <your_target>
 ## HTTP API
 
 ```bash
-uv run api.py            # http://127.0.0.1:8000 — OpenAPI docs at /docs
+uv run src/api/app.py      # http://127.0.0.1:8000 — OpenAPI docs at /docs
 ```
 
 ```bash
@@ -161,3 +164,18 @@ uv run pytest         # unit + HTTP API tests (no network, isolated temp state)
 - [HTTP API](docs/api.md)
 - [Architecture](docs/architecture.md)
 - [Indexer and RAG](docs/modules/indexer_and_rag.md)
+
+## Storage
+
+All persistent data is stored in a single SQLite database (default `~/.instarag/instarag.db`):
+
+- **profiles** — tracked Instagram profiles and settings
+- **settings** — app configuration
+- **saved_posts** — imported saved posts from Instagram data export
+- **processed_posts** — extracted knowledge from analyzed posts
+
+To use PostgreSQL or Supabase instead, set `INSTARAG_DATABASE_URL` in your `.env`:
+
+```env
+INSTARAG_DATABASE_URL=postgresql://user:password@localhost:5432/instarag
+```
