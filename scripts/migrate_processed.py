@@ -6,7 +6,6 @@ import json
 import sys
 from pathlib import Path
 
-# Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from storage.db import get_session, init_db
@@ -42,7 +41,6 @@ def migrate():
                 skipped += 1
                 continue
 
-            # Check if already exists
             existing = repo.get_processed_post(db, post_id)
             if existing:
                 skipped += 1

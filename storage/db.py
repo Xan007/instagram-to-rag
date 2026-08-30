@@ -39,7 +39,6 @@ def get_engine():
                 db_path = url.replace("sqlite:///", "")
                 Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         _engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
-        # Reset session factory when engine changes
         global _SessionLocal
         _SessionLocal = None
     return _engine

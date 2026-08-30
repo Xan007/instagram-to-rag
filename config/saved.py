@@ -91,7 +91,6 @@ def import_saved_posts(path) -> SavedState:
     data = json.loads(raw.decode("utf-8"))
     items = parse_saved_posts(data)
 
-    # Store posts in database
     from storage.models import SavedPost
     db = _db()
     try:

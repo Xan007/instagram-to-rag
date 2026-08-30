@@ -39,7 +39,7 @@ class InterestFilter:
                     err_str = str(e)
                     if "503" in err_str or "UNAVAILABLE" in err_str:
                         logger.info("Model %s is experiencing 503 high demand. Trying next model...", model_name)
-                        break # Try next fallback model immediately
+                        break
                     elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
                         logger.info("Rate limit on %s. Waiting 10s...", model_name)
                         time.sleep(10)
@@ -62,7 +62,7 @@ class InterestFilter:
             items_for_prompt = [
                 {
                     "id": p["id"],
-                    "caption": p.get("description", "")[:300], # Keep concise for token efficiency
+                    "caption": p.get("description", "")[:300],
                     "hashtags": p.get("hashtags", [])[:5]
                 }
                 for p in chunk
@@ -83,7 +83,6 @@ If none match, respond with: []
 """
             try:
                 raw_response = self._call_with_fallback(prompt)
-                # Parse JSON array from response
                 clean_text = raw_response.strip()
                 if clean_text.startswith("```"):
                     clean_text = clean_text.split("```")[1]

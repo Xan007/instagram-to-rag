@@ -202,7 +202,7 @@ User Question:
                 response["standalone_question"] = search_query
             return response
 
-        # 3. Build filtered, deduplicated context (captions included)
+        # 4. Build filtered, deduplicated context (captions included)
         context, sources, _dropped = self.build_context(matches, min_score=min_score)
         if not context:
             closest = [
@@ -222,7 +222,7 @@ User Question:
                 **({"standalone_question": search_query} if pairs else {}),
             }
 
-        # 4. Generate Grounded Answer with Gemini Chat API
+        # 5. Generate Grounded Answer with Gemini Chat API
         prompt = self.build_prompt(
             question,
             context,

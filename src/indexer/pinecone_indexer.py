@@ -17,13 +17,11 @@ EMBEDDING_DIM = 3072
 
 class PineconeIndexer:
     def __init__(self):
-        # Initialize Google GenAI for Embeddings
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable is not set.")
         self.genai_client = genai.Client(api_key=api_key)
 
-        # Initialize Pinecone
         pinecone_key = os.getenv("PINECONE_API_KEY")
         if not pinecone_key:
             raise ValueError("PINECONE_API_KEY environment variable is not set.")
@@ -43,7 +41,6 @@ class PineconeIndexer:
                 metric="cosine",
                 spec=ServerlessSpec(cloud="aws", region="us-east-1")
             )
-            # Poll until the index is ready
             while True:
                 desc = self.pc.describe_index(name=INDEX_NAME)
                 status = desc.get("status", {})
@@ -80,7 +77,6 @@ class PineconeIndexer:
         post_id = metadata["id"]
         post_url = metadata["url"]
 
-        # 1. Save to database
         db = get_session()
         try:
             post = ProcessedPost(
@@ -95,13 +91,10 @@ class PineconeIndexer:
         finally:
             db.close()
 
-        # 2. Prepare text for embedding
         embed_input = f"Creator: @{username}\nURL: {post_url}\nKnowledge Summary:\n{extracted_text}"
         vector_values = self._get_embedding(embed_input)
 
-        # 3. Upsert to Pinecone
         vector_id = f"{username}_{post_id}"
-        # Keep metadata within 40KB limits
         meta = {
             "post_id": post_id,
             "username": username,

@@ -107,7 +107,7 @@ class GeminiAnalyzer:
                         err_str = str(e)
                         if "503" in err_str or "UNAVAILABLE" in err_str:
                             logger.info("Model %s is experiencing 503 high demand. Trying next model...", model_name)
-                            break # Fallback to next model immediately
+                            break
                         elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
                             logger.info("Rate limit on %s. Waiting 10s...", model_name)
                             time.sleep(10)
