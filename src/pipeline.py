@@ -375,7 +375,8 @@ def add_reel(
 
     apify_meta: Dict[str, Dict[str, Any]] = {}
     try:
-        from src.scraper.apify_post_scraper import ApifyPostScraper
+        from config.utils import shortcode_from_url
+    from src.scraper.apify_post_scraper import ApifyPostScraper
 
         scraper_api = ApifyPostScraper()
         progress(f"Fetching metadata via {ApifyPostScraper.ACTOR_ID}...")

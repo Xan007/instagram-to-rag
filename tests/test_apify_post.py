@@ -1,5 +1,6 @@
 """Unit tests for the apify/instagram-scraper post normalization (offline)."""
-from src.scraper.apify_post_scraper import _normalize_post, shortcode_from_url
+from config.utils import shortcode_from_url
+from src.scraper.apify_post_scraper import _normalize_post
 
 
 def test_shortcode_from_url_reel_and_post():

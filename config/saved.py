@@ -7,11 +7,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from config.paths import SAVED_DIR
+from config.utils import URL_SHORTCODE_RE
 
 SAVED_POSTS_FILE = SAVED_DIR / "saved_posts.json"
 STATE_FILE = SAVED_DIR / "state.json"
-
-_URL_SHORTCODE_RE = re.compile(r"/(?:p|reel|tv|stories)/([A-Za-z0-9_-]+)")
 
 
 @dataclass
@@ -107,7 +106,7 @@ def parse_saved_posts(data: Any) -> List[Dict[str, Any]]:
             caption = item.get("caption", "")
             title = item.get("title", "")
 
-        m = _URL_SHORTCODE_RE.search(str(url))
+        m = URL_SHORTCODE_RE.search(str(url))
         post_id = m.group(1) if m else None
         if not post_id:
             continue

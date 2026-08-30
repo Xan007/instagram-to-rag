@@ -4,26 +4,17 @@ Used ONLY by the add-reel flow: it returns direct media URLs (videoUrl,
 images) so no Instagram session or yt-dlp is needed for ingestion.
 """
 import os
-import re
 from typing import Any, Dict, List
 
 from apify_client import ApifyClient
 
 from config.env import load_runtime_env
+from config.utils import shortcode_from_url
 from src.scraper.apify_scraper import _extract_hashtags
 
 load_runtime_env()
 
 ACTOR_ID = "apify/instagram-scraper"
-
-_URL_SHORTCODE_RE = re.compile(r"/(?:p|reel|tv)/([A-Za-z0-9_-]+)")
-
-
-def shortcode_from_url(url: str) -> str:
-    m = _URL_SHORTCODE_RE.search(url)
-    if not m:
-        raise ValueError(f"Could not extract shortcode from URL: {url}")
-    return m.group(1)
 
 
 def _normalize_post(item: Dict[str, Any]) -> Dict[str, Any]:
