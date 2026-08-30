@@ -23,7 +23,7 @@ def config(
     embed_provider: str = typer.Option(None, "--embed-provider", help="'gemini' or 'local'"),
 ):
     """Configure the global pipeline settings."""
-    from config.settings import load_settings, save_settings
+    from config.settings import VALID_EMBED_PROVIDERS, VALID_ENGINES, load_settings, save_settings
 
     settings = load_settings()
 
@@ -32,14 +32,14 @@ def config(
         settings.audio_only = audio_only
         updated = True
     if engine is not None:
-        if engine not in ["gemini", "local_whisper"]:
-            console.print("[bold red]Invalid engine. Use 'gemini' or 'local_whisper'.[/bold red]")
+        if engine not in VALID_ENGINES:
+            console.print(f"[bold red]Invalid engine. Use one of: {', '.join(sorted(VALID_ENGINES))}.[/bold red]")
             raise typer.Exit(1)
         settings.engine = engine
         updated = True
     if embed_provider is not None:
-        if embed_provider not in ["gemini", "local"]:
-            console.print("[bold red]Invalid embed provider. Use 'gemini' or 'local'.[/bold red]")
+        if embed_provider not in VALID_EMBED_PROVIDERS:
+            console.print(f"[bold red]Invalid embed provider. Use one of: {', '.join(sorted(VALID_EMBED_PROVIDERS))}.[/bold red]")
             raise typer.Exit(1)
         settings.embed_provider = embed_provider
         updated = True
@@ -67,9 +67,10 @@ def add_profile(
 ):
     """Add a new profile, or update only the fields you pass for an existing one."""
     from config.profiles import ProfileConfig, load_profile, save_profile
+    from config.settings import VALID_ANALYSIS_MODES
 
-    if analysis_mode is not None and analysis_mode not in ["gemini", "local_whisper", "openai_whisper"]:
-        console.print("[bold red]Invalid analysis mode. Use 'gemini', 'local_whisper' or 'openai_whisper'.[/bold red]")
+    if analysis_mode is not None and analysis_mode not in VALID_ANALYSIS_MODES:
+        console.print(f"[bold red]Invalid analysis mode. Use one of: {', '.join(sorted(VALID_ANALYSIS_MODES))}.[/bold red]")
         raise typer.Exit(1)
 
     profile = load_profile(username)

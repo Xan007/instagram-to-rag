@@ -6,6 +6,10 @@ from config.paths import CONFIG_DIR
 
 CONFIG_FILE = CONFIG_DIR / "settings.json"
 
+VALID_ENGINES = {"gemini", "local_whisper"}
+VALID_EMBED_PROVIDERS = {"gemini", "local"}
+VALID_ANALYSIS_MODES = {"gemini", "local_whisper", "openai_whisper"}
+
 
 @dataclass
 class AppSettings:

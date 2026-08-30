@@ -22,7 +22,7 @@ from config.profiles import (
     load_profile,
     save_profile,
 )
-from config.settings import AppSettings, load_settings, save_settings
+from config.settings import VALID_ANALYSIS_MODES, VALID_EMBED_PROVIDERS, VALID_ENGINES, AppSettings, load_settings, save_settings
 from src.api.jobs import manager
 
 app = FastAPI(
@@ -102,8 +102,6 @@ class QueryIn(BaseModel):
     history: Optional[List[ChatTurn]] = None
 
 
-VALID_ANALYSIS_MODES = {"gemini", "local_whisper", "openai_whisper"}
-
 
 @app.get("/health", tags=["meta"])
 def health() -> Dict[str, str]:
@@ -122,10 +120,10 @@ def patch_config(patch: Dict[str, Any], _: None = Depends(require_api_key)) -> D
     for key, value in patch.items():
         if key not in allowed:
             raise HTTPException(status_code=422, detail=f"Unknown setting '{key}'.")
-        if key == "engine" and value not in ("gemini", "local_whisper"):
-            raise HTTPException(status_code=422, detail="engine must be 'gemini' or 'local_whisper'.")
-        if key == "embed_provider" and value not in ("gemini", "local"):
-            raise HTTPException(status_code=422, detail="embed_provider must be 'gemini' or 'local'.")
+        if key == "engine" and value not in VALID_ENGINES:
+            raise HTTPException(status_code=422, detail=f"engine must be one of {sorted(VALID_ENGINES)}.")
+        if key == "embed_provider" and value not in VALID_EMBED_PROVIDERS:
+            raise HTTPException(status_code=422, detail=f"embed_provider must be one of {sorted(VALID_EMBED_PROVIDERS)}.")
         setattr(settings, key, value)
     save_settings(settings)
     return vars(load_settings())
