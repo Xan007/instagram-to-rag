@@ -1,11 +1,14 @@
 """Shared types and utilities for pipeline modules."""
 import glob
 import os
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from config.paths import RAW_DIR
 
-Progress = Callable[[str], None]
+
+class Progress(Protocol):
+    """Protocol for progress reporting callbacks."""
+    def __call__(self, message: str) -> None: ...
 
 
 def echo(message: str) -> None:
