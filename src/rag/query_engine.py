@@ -1,15 +1,14 @@
 import logging
 import os
 import re
-import time
 import warnings
 from typing import Any, Dict, List, Optional
 from pinecone import Pinecone
 from google import genai
 from config.env import load_runtime_env
+from src.llm.factory import LLMClientFactory
 from src.rag.conversation import (
     build_history_block,
-    condense_question,
     normalize_history,
 )
 
@@ -20,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 INDEX_NAME = "instarag"
 EMBEDDING_MODEL = "gemini-embedding-001"
-GENERATION_MODEL = "gemini-2.5-flash"
 
 _CITATION_RE = re.compile(r"\[Source (\d+)\]")
 
@@ -35,16 +33,14 @@ _LOW_CONFIDENCE_ANSWER = (
     "conocimiento de los creadores indexados. Prueba reformularla o consulta otro tema."
 )
 
-_STRICT_RULES = """
-Instructions:
+_STRICT_RULES = """Instructions:
 1. Answer the user's question accurately and concisely using ONLY the provided context.
 2. If the context does not contain the answer, say exactly that you don't have that information from the creators' content.
 3. Cite your sources with [Source N] right after each fact or recommendation, using the source numbers from the context.
 4. NEVER invent, paste, or repeat URLs or posts that are not in the context. Do not include a link more than once.
 5. Write in the same language as the user's question.
 6. Write as a natural plain-text chat message: no Markdown, no bold, no headers, no bullet lists, no asterisks.
-7. Be concise and never repeat yourself: state each fact once and do not restate the same idea in different words.
-"""
+7. Be concise and never repeat yourself: state each fact once and do not restate the same idea in different words."""
 
 _GROUNDED_PLUS_RULES = _STRICT_RULES + """
 8. After your grounded answer, if general knowledge would clearly help the user (e.g. the posts cover the topic only partially), append ONE short additional block introduced exactly by:
@@ -52,8 +48,7 @@ _GROUNDED_PLUS_RULES = _STRICT_RULES + """
 General (no proviene de los creadores):
 followed by 1-3 plain sentences of widely accepted knowledge on the topic.
 9. Never attribute anything in that final block to the creators or to any [Source N]; it must be clearly separate.
-10. If your grounded answer already fully covers the question, omit the extra block entirely.
-"""
+10. If your grounded answer already fully covers the question, omit the extra block entirely."""
 
 
 class QueryEngine:
@@ -69,8 +64,10 @@ class QueryEngine:
         self.pc = Pinecone(api_key=pinecone_key)
         self.index = self.pc.Index(INDEX_NAME)
 
+        self.llm = LLMClientFactory.get_client(stage="rag")
+        self.rag_model = os.getenv("RAG_MODEL")
+
     def _get_embedding(self, text: str) -> list:
-        """Generates query embedding with retrieval-optimized task type."""
         res = self.genai_client.models.embed_content(
             model=EMBEDDING_MODEL,
             contents=text,
@@ -80,7 +77,6 @@ class QueryEngine:
 
     @staticmethod
     def build_context(matches: List[Dict[str, Any]], min_score: float) -> tuple:
-        """Filter matches by score, dedupe by URL and format prompt context."""
         context_parts = []
         sources = []
         seen_urls = set()
@@ -121,14 +117,10 @@ class QueryEngine:
         rules = _STRICT_RULES if mode == "strict" else _GROUNDED_PLUS_RULES
         conversation_section = ""
         if history_block:
-            conversation_section = f"""
-Conversation so far (for continuity only; do not repeat it):
-{history_block}
-"""
-        return f"""
-You are a specialized AI assistant that answers questions based EXCLUSIVELY on the knowledge extracted from Instagram posts provided in the context.
-{conversation_section}
-Context from Creator Posts:
+            conversation_section = f"Conversation so far (for continuity only; do not repeat it):\n{history_block}\n\n"
+
+        return f"""You are a specialized AI assistant that answers questions based EXCLUSIVELY on the knowledge extracted from Instagram posts provided in the context.
+{conversation_section}Context from Creator Posts:
 {context}
 
 User Question:
@@ -140,6 +132,31 @@ User Question:
         cited = set(_CITATION_RE.findall(answer))
         return [{**src, "cited": str(i) in cited} for i, src in enumerate(sources, start=1)]
 
+    def _condense_question(self, question: str, pairs: List[Dict[str, str]]) -> str:
+        if not pairs:
+            return question.strip()
+
+        history_text = "\n".join(f"{t['role'].capitalize()}: {t['content']}" for t in pairs)
+        prompt = f"""Given the following conversation and a follow-up question, rephrase the follow-up question to be a standalone search query that contains all necessary context from previous turns. Do NOT answer the question. Only return the standalone question in the same language.
+
+Conversation:
+{history_text}
+
+Follow-up Question: {question}
+
+Standalone Question:"""
+
+        try:
+            condensed = self.llm.generate(
+                messages=[{"role": "user", "content": prompt}],
+                model=self.rag_model,
+                temperature=0.0,
+            )
+            return condensed.strip() if condensed else question.strip()
+        except Exception as e:
+            logger.warning("Question condensation failed (%s). Using original question.", e)
+            return question.strip()
+
     def query(
         self,
         question: str,
@@ -150,12 +167,11 @@ User Question:
         mode: str = "grounded_plus",
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """Query RAG engine, filtering optionally by creator or by post_ids (for a specific group)."""
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
 
         pairs = normalize_history(history)
-        search_query = condense_question(self.genai_client, GENERATION_MODEL, question, pairs)
+        search_query = self._condense_question(question, pairs)
         query_vector = self._get_embedding(search_query)
 
         filter_dict: Optional[Dict[str, Any]] = None
@@ -204,28 +220,25 @@ User Question:
             mode,
             history_block=build_history_block(pairs),
         )
-        for attempt in range(3):
-            try:
-                chat = self.genai_client.chats.create(model=GENERATION_MODEL)
-                response = chat.send_message(prompt)
-                result = {
-                    "answer": response.text.strip(),
-                    "sources": self.annotate_citations(response.text.strip(), sources),
-                    "mode": mode,
-                }
-                if pairs:
-                    result["standalone_question"] = search_query
-                return result
-            except Exception as e:
-                err_str = str(e)
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str:
-                    logger.info("Rate limit reached. Retrying in 10s (%d/3)...", attempt + 1)
-                    time.sleep(10)
-                else:
-                    raise e
 
-        return {
-            "answer": "Failed to generate answer due to repeated rate limits.",
-            "sources": sources,
-            "mode": mode,
-        }
+        try:
+            answer_text = self.llm.generate(
+                messages=[{"role": "user", "content": prompt}],
+                model=self.rag_model,
+                temperature=0.2,
+            )
+            result = {
+                "answer": answer_text,
+                "sources": self.annotate_citations(answer_text, sources),
+                "mode": mode,
+            }
+            if pairs:
+                result["standalone_question"] = search_query
+            return result
+        except Exception as e:
+            logger.error("RAG generation failed: %s", e)
+            return {
+                "answer": f"Failed to generate answer: {e}",
+                "sources": sources,
+                "mode": mode,
+            }
