@@ -1,71 +1,82 @@
 # System Architecture: InstaRAG
 
 ## Overview
-**InstaRAG** is a modular, multi-tenant/multi-account data pipeline and Retrieval-Augmented Generation (RAG) system. It ingests content from Instagram creator profiles, specific reel URLs, and user saved post exports (videos, carousels, infographics, and captions), transcribes and extracts dense factual knowledge, indexes semantic vectors into Pinecone, and manages user-scoped RAG agents (Groups) with sharing permissions.
+
+InstaRAG is a modular, multi-tenant knowledge ingestion pipeline and Retrieval-Augmented Generation (RAG) system. The application transforms public Instagram content (videos, carousels, infographics, captions, and user saved post exports) into structured, queryable knowledge. Extracted insights are indexed into a Pinecone vector database, while relational relationships (users, groups, and permissions) are maintained in an SQL database via SQLAlchemy.
 
 ```mermaid
 flowchart TD
-    subgraph Multi-Tenant Identity & Access
-        U[User Accounts: `User`]
-        G[RAG Agents / Collections: `Group`]
-        S[Shared Access: `GroupShare`]
-        U -->|Owns| G
-        G -->|Shared with| S
+    subgraph Multi-Tenant Identity & Scoped Access
+        U[Users] -->|Owns| G[Groups / RAG Agents]
+        G -->|Shared with| S[GroupShare Permissions]
         S -->|Grants access to| U
     end
 
-    subgraph Global Deduplicated Pipeline
-        IG[Global Creator Profiles: `IGProfile`] -->|Scrape All Posts| Scraper[Apify Scraper]
-        ReelURL[Individual Reel URLs] --> ScraperURL[Apify Post Scraper / yt-dlp]
-        SavedZip[User IG Data Export] --> SavedParser[Saved Posts Importer]
+    subgraph Global Deduplicated Ingestion Pipeline
+        IG[Global IG Profiles] --> Scraper[Apify Scraper]
+        ReelURL[Reel URLs] --> ScraperURL[Apify Post Scraper / yt-dlp]
+        SavedExport[User Saved Posts Export] --> SavedParser[Saved Posts Parser]
         
         Scraper --> Downloader[Media Downloader / yt-dlp]
         ScraperURL --> Downloader
         SavedParser --> Downloader
         
         Downloader --> Analyzer[Gemini Multimodal Analyzer / Whisper]
-        Analyzer --> PostDB[(Relational DB: `Post` / PostgreSQL / SQLite / Supabase)]
+        Analyzer --> PostDB[(Relational DB: SQLite / Postgres / Supabase)]
         Analyzer --> Indexer[Pinecone Vector Indexer]
         Indexer --> Pinecone[(Pinecone Vector DB)]
     end
 
     subgraph Scoped Agents & Knowledge Retrieval
-        G -->|Association via Interests / URLs| GP[Group Posts: `GroupPost`]
-        GP -->|Filters by `post_id IN [...]`| QueryEngine[RAG Query Engine]
+        G --> GP[Group Posts Association]
+        GP -->|Filters by post_id list| QueryEngine[RAG Query Engine]
         QueryEngine -->|Vector Search with Metadata Filter| Pinecone
-        Pinecone -->|Relevant Knowledge Chunks| GroundedGen[Grounded Answer Generator: Gemini]
-        GroundedGen --> FinalAnswer[Grounded Answer with Source URLs]
+        Pinecone -->|Relevant Knowledge Chunks| Generator[Gemini Response Generator]
+        Generator --> Answer[Answer with Source Citations]
     end
 ```
 
 ---
 
-## Key Design Decisions
+## Architectural Principles and Design Decisions
 
-### 1. Global Deduplicated Extraction vs. Local Agent Scoping
-- **Global Extraction:** Posts and Reels are scraped, analyzed, and embedded **exactly once** regardless of how many users track the creator or save the video.
-- **Interests at Group Level:** Global scraping does not discard posts by topic. Instead, each user creates custom **Groups** (e.g. *Fitness*, *Nutrición*, *Recetas*) and uses LLM batch interest filtering to populate their group from existing global knowledge.
+### 1. Global Ingestion vs. User-Scoped RAG Agents
 
-### 2. Database & Identity Agnosticism
-- Built with **SQLAlchemy 2.0**: Switch seamlessly between local SQLite (`sqlite://...`), Supabase, Neon, or standard PostgreSQL (`postgresql://...`) via `INSTARAG_DATABASE_URL`.
-- User references are stored as generic string IDs (`user_id`), allowing pluggable authentication (Clerk, Supabase Auth, Firebase, JWTs) without vendor lock-in.
+In standard multi-user architectures, duplicate extraction across users causes significant API cost overhead and database bloat. InstaRAG separates content ingestion from user organization:
 
-### 3. Pinecone Vector Strategy
-- Vectors are stored with rich metadata: `post_id`, `creator_username`, `url`, `type`, `original_description`, and `extracted_knowledge`.
-- Queries scoped to a Group use Pinecone metadata filtering: `{"post_id": {"$in": [group_post_ids]}}`.
+- **Global Ingestion (`IGProfile` and `Post`):** When an Instagram profile is scraped or a reel is ingested, the media is analyzed and embedded once globally. Every processed post receives a persistent record in the `posts` table and a corresponding vector in Pinecone.
+- **User-Scoped Agents (`Group` and `GroupPost`):** Users create isolated knowledge groups (such as "Low Carb Nutrition" or "Strength Training"). Users associate posts with their groups either manually or by applying LLM-driven interest filtering to an indexed creator's catalog.
+- **Zero Duplicate Extractions:** When multiple users track the same creator, save identical reels, or add overlapping content to distinct groups, the pipeline reuses existing extracted knowledge without re-downloading media or regenerating vector embeddings.
+
+### 2. Multi-Tenant Permissions and Collaboration
+
+- Each `Group` is owned by a `User`.
+- Owners can grant read access to other accounts via `GroupShare` records.
+- Access checks ensure that only group owners or authorized collaborators can execute queries, view member posts, or participate in chats against a specific agent.
+
+### 3. Identity and Database Agnosticism
+
+- **Database Independence:** Built using SQLAlchemy 2.0. By updating `INSTARAG_DATABASE_URL`, the application operates with local SQLite, PostgreSQL, Supabase, or Neon without schema modification.
+- **Identity Decoupling:** Users are represented by plain string identifiers (`user_id`). The core ingestion and query engines do not depend on any specific authentication provider, allowing integration with Clerk, Supabase Auth, Firebase, or custom JWT middlewares.
+
+### 4. Pinecone Vector Strategy
+
+- Vectors are indexed with rich metadata: `post_id`, `creator_username`, `url`, `type`, `original_description`, and `extracted_knowledge`.
+- When querying a specific Group, Pinecone executes a metadata filter: `{"post_id": {"$in": [list_of_group_post_ids]}}`.
+- When querying across a creator: `{"creator_username": {"$eq": "target_creator"}}`.
 
 ---
 
-## Core Components
+## Module Directory Structure
 
-| Module | Responsibility |
-|---|---|
-| `storage` | SQLAlchemy models (`User`, `IGProfile`, `Post`, `Group`, `GroupPost`, `GroupShare`, `UserSavedPost`) & repository layer |
-| `config` | User, Group, Global Profile, and Settings managers |
-| `src.scraper` | Apify Actor integrations for profiles and individual post URLs |
-| `src.downloader` | Direct CDN media downloader with yt-dlp fallback |
-| `src.analyzer` | Gemini multimodal vision/audio understanding & Whisper fallback |
-| `src.indexer` | Pinecone vector upsert & indexing |
-| `src.rag` | Query engine with history condensation, score filtering, and citation annotations |
-| `src.pipeline` | Orchestration layer for scraping, reel ingestion, saved posts, and group agent population |
-| `src.api` | FastAPI REST API exposing background jobs, query endpoints, and OpenAPI docs |
+| Directory | Layer | Description |
+|---|---|---|
+| `storage/` | Database Layer | SQLAlchemy models (`User`, `IGProfile`, `Post`, `Group`, `GroupPost`, `GroupShare`, `UserSavedPost`) and repository functions. |
+| `config/` | Configuration Layer | Entity helper modules (`users.py`, `groups.py`, `ig_profiles.py`, `settings.py`). |
+| `src/scraper/` | Ingestion Layer | Apify Actor integrations for creator profiles and post URLs. |
+| `src/downloader/` | Media Layer | Concurrent CDN media downloader with yt-dlp fallback. |
+| `src/analyzer/` | Analysis Layer | Google Gemini multimodal vision/audio understanding and Whisper transcription fallback. |
+| `src/indexer/` | Vector Layer | Pinecone vector embedding and index management. |
+| `src/rag/` | Retrieval Layer | Query engine with question condensation, score thresholding, and source citation logic. |
+| `src/pipeline/` | Orchestration Layer | Pipeline functions coordinating ingestion, group population, saved posts, and query execution. |
+| `src/api/` | Transport Layer | FastAPI REST application with background job workers and OpenAPI documentation. |
