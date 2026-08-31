@@ -51,7 +51,7 @@ class PineconeIndexer:
                 metric="cosine",
                 spec=ServerlessSpec(cloud="aws", region="us-east-1"),
             )
-            while not self.pc.describe_index(name=INDEX_NAME).get("status", {}).get("ready"):
+            while not self.pc.describe_index(name=INDEX_NAME).status.ready:
                 logger.info("Waiting for index to be ready…")
                 time.sleep(2)
 
