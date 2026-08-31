@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 INDEX_NAME = "instarag"
 EMBEDDING_MODEL = "gemini-embedding-001"
-GENERATION_MODEL = "gemini-3.5-flash-lite"
+GENERATION_MODEL = "gemini-2.5-flash"
 
 _CITATION_RE = re.compile(r"\[Source (\d+)\]")
 
@@ -34,8 +34,6 @@ _LOW_CONFIDENCE_ANSWER = (
     "No encontré contenido suficientemente relacionado con tu pregunta en la base de "
     "conocimiento de los creadores indexados. Prueba reformularla o consulta otro tema."
 )
-
-_GENERAL_BLOCK_HEADER = "\n\n---\nGeneral (no proviene de los creadores; verificado solo como conocimiento general):\n"
 
 _STRICT_RULES = """
 Instructions:
@@ -82,11 +80,7 @@ class QueryEngine:
 
     @staticmethod
     def build_context(matches: List[Dict[str, Any]], min_score: float) -> tuple:
-        """Filter matches by score, dedupe by URL and format the prompt context.
-
-        Returns (context_string, sources_list, dropped_count).
-        Pure function, safe to unit test.
-        """
+        """Filter matches by score, dedupe by URL and format prompt context."""
         context_parts = []
         sources = []
         seen_urls = set()
@@ -94,7 +88,7 @@ class QueryEngine:
         for match in matches:
             meta = match.get("metadata", {})
             post_url = meta.get("url", "Unknown URL")
-            post_creator = meta.get("username", "Unknown")
+            post_creator = meta.get("creator_username", "Unknown")
             knowledge = meta.get("extracted_knowledge", "")
             caption = meta.get("original_description", "")
 
@@ -124,7 +118,6 @@ class QueryEngine:
         mode: str,
         history_block: str = "",
     ) -> str:
-        """Assemble the generation prompt for the requested mode. Pure function."""
         rules = _STRICT_RULES if mode == "strict" else _GROUNDED_PLUS_RULES
         conversation_section = ""
         if history_block:
@@ -144,51 +137,44 @@ User Question:
 
     @staticmethod
     def annotate_citations(answer: str, sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Mark each retrieved source with whether the answer actually cited it.
-
-        Retrieval returns a candidate pool; the model only cites what it used.
-        Pure function, safe to unit test.
-        """
         cited = set(_CITATION_RE.findall(answer))
         return [{**src, "cited": str(i) in cited} for i, src in enumerate(sources, start=1)]
 
     def query(
         self,
         question: str,
-        username: Optional[str] = None,
+        creator: Optional[str] = None,
+        post_ids: Optional[List[str]] = None,
         top_k: int = DEFAULT_TOP_K,
         min_score: float = DEFAULT_MIN_SCORE,
         mode: str = "grounded_plus",
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """Retrieve relevant context from Pinecone and generate a grounded response.
-
-        mode='strict': answers strictly from creator content or refuses.
-        mode='grounded_plus': same grounding, optionally appending a clearly
-        labeled general-knowledge block when it helps the user.
-
-        history (client-owned, stateless): prior [{role, content}] turns used
-        to condense the question for retrieval and keep the answer coherent.
-        """
+        """Query RAG engine, filtering optionally by creator or by post_ids (for a specific group)."""
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
 
         pairs = normalize_history(history)
-
-        # 1. Condense follow-ups into a standalone search query (never fails open)
         search_query = condense_question(self.genai_client, GENERATION_MODEL, question, pairs)
-
-        # 2. Embed the (possibly condensed) query
         query_vector = self._get_embedding(search_query)
 
-        # 3. Query Pinecone
-        filter_dict = {"username": {"$eq": username}} if username else None
+        filter_dict: Optional[Dict[str, Any]] = None
+        if post_ids is not None:
+            if not post_ids:
+                return {
+                    "answer": "This group does not have any posts indexed yet.",
+                    "sources": [],
+                    "mode": mode,
+                }
+            filter_dict = {"post_id": {"$in": post_ids}}
+        elif creator:
+            filter_dict = {"creator_username": {"$eq": creator}}
 
         results = self.index.query(
             vector=query_vector,
             top_k=max(1, int(top_k)),
             include_metadata=True,
-            filter=filter_dict
+            filter=filter_dict,
         )
 
         matches = results.get("matches", [])
@@ -202,27 +188,16 @@ User Question:
                 response["standalone_question"] = search_query
             return response
 
-        # 4. Build filtered, deduplicated context (captions included)
         context, sources, _dropped = self.build_context(matches, min_score=min_score)
         if not context:
-            closest = [
-                {"creator": m.get("metadata", {}).get("username"), "url": m.get("metadata", {}).get("url")}
-                for m in matches[:3]
-                if m.get("metadata")
-            ]
-            hint = ""
-            if closest:
-                listed = "; ".join(f"@{c['creator']}: {c['url']}" for c in closest if c["url"])
-                hint = f" Lo más cercano disponible es: {listed}"
             return {
-                "answer": _LOW_CONFIDENCE_ANSWER + hint,
+                "answer": _LOW_CONFIDENCE_ANSWER,
                 "sources": [],
                 "mode": mode,
                 "low_confidence": True,
                 **({"standalone_question": search_query} if pairs else {}),
             }
 
-        # 5. Generate Grounded Answer with Gemini Chat API
         prompt = self.build_prompt(
             question,
             context,
@@ -243,14 +218,14 @@ User Question:
                 return result
             except Exception as e:
                 err_str = str(e)
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str or "UNAVAILABLE" in err_str:
-                    logger.info("Rate limit reached on answer generation. Retrying in 10s (%d/3)...", attempt + 1)
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str:
+                    logger.info("Rate limit reached. Retrying in 10s (%d/3)...", attempt + 1)
                     time.sleep(10)
                 else:
                     raise e
 
         return {
-            "answer": "Failed to generate answer due to repeated rate limits. Please try again in a few seconds.",
+            "answer": "Failed to generate answer due to repeated rate limits.",
             "sources": sources,
             "mode": mode,
         }
