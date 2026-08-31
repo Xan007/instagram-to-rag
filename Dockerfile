@@ -1,31 +1,46 @@
-FROM python:3.14-slim AS base
+FROM python:3.12-slim AS base
 
+# Install system dependencies (ffmpeg for video/audio processing, curl for healthchecks)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv for fast, reliable package management
 RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
+# Copy dependency specifications first for layer caching
 COPY pyproject.toml uv.lock README.md ./
+
+# Sync production dependencies with api extras
+RUN uv sync --no-dev --extra api
+
+# Copy application source code
 COPY src ./src
 COPY config ./config
-COPY api.py main.py ./
+COPY storage ./storage
+COPY main.py ./
 
-RUN uv sync --no-dev --group api \
-    && useradd -m instarag \
-    && mkdir -p /data \
+# Create non-root user and persistent directories
+RUN useradd -m -u 1000 instarag \
+    && mkdir -p /data/config /data/raw /data/saved \
     && chown -R instarag:instarag /app /data
 
 USER instarag
 
-ENV INSTARAG_DATA_DIR=/data
-ENV INSTARAG_CONFIG_DIR=/data/config
-ENV INSTARAG_HOST=0.0.0.0
-ENV INSTARAG_PORT=8000
+# Default environment variables for cloud portability
+ENV PYTHONUNBUFFERED=1 \
+    INSTARAG_DATA_DIR=/data \
+    INSTARAG_CONFIG_DIR=/data/config \
+    INSTARAG_HOST=0.0.0.0 \
+    INSTARAG_PORT=8000
 
 VOLUME ["/data"]
 EXPOSE 8000
 
-CMD ["uv", "run", "src/api/main.py"]
+# Healthcheck for container orchestration (Render, Fly.io, ECS, K8s, Cloud Run)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+
+CMD ["uv", "run", "python", "-m", "src.api.main"]
