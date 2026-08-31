@@ -104,11 +104,17 @@ def show_profile(
 ):
     """Show the full configuration and state of a profile."""
     from config.profiles import load_profile
+    from datetime import datetime, timezone
 
     profile = load_profile(username)
     if not profile:
         console.print(f"[bold red]Profile @{username} not found.[/bold red]")
         raise typer.Exit(1)
+
+    last_scraped = "never"
+    if profile.last_scraped_at:
+        dt = datetime.fromtimestamp(profile.last_scraped_at, tz=timezone.utc)
+        last_scraped = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
     console.print(f"[bold]Profile @{profile.username}[/bold]")
     console.print(f"  Interests:      {profile.interests}")
@@ -117,14 +123,155 @@ def show_profile(
     console.print(f"  Audio only:     {profile.audio_only}")
     console.print(f"  Processed:      {len(profile.processed_ids)} posts")
     console.print(f"  Failed:         {len(profile.failed_ids)} posts")
+    console.print(f"  Last scraped:   {last_scraped}")
+    console.print(f"  Last run at:    {profile.last_run_at or 'never'}")
     if profile.failed_ids:
         console.print(f"  Failed IDs:     {', '.join(profile.failed_ids)}")
+
+
+@profile_app.command("update")
+def update_profile(
+    username: str = typer.Argument(..., help="Instagram username"),
+    newer_than: Optional[str] = typer.Option(
+        None,
+        "--newer-than",
+        help=(
+            "Only scrape posts newer than this date. "
+            "Accepts YYYY-MM-DD, ISO-8601, or Unix timestamp. "
+            "Defaults to the last scraped date stored in the profile."
+        ),
+    ),
+    keep_media: bool = typer.Option(False, "--keep-media", help="Keep downloaded media files after processing"),
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Run even if no last_scraped_at is stored (fetches the full profile)."
+    ),
+):
+    """Incrementally update a profile with only new posts since the last run.
+
+    By default uses the stored `last_scraped_at` timestamp as the `--newer-than`
+    cutoff so you only pay for posts that appeared after the last pipeline run.
+    Pass `--force` to do a full scan even if no date is stored.
+    """
+    from config.profiles import load_profile
+    from src.pipeline import run_profile
+    from datetime import datetime, timezone
+
+    profile = load_profile(username)
+    if not profile:
+        console.print(f"[bold red]Profile @{username} not found. Add it first using 'profile add'[/bold red]")
+        raise typer.Exit(1)
+
+    # Resolve the effective newer_than value
+    effective_newer_than = newer_than
+    if not effective_newer_than:
+        if profile.last_scraped_at:
+            dt = datetime.fromtimestamp(profile.last_scraped_at, tz=timezone.utc)
+            effective_newer_than = dt.strftime("%Y-%m-%d")
+            console.print(
+                f"[bold blue]Auto date-filter:[/bold blue] using last scraped date "
+                f"[bold]{effective_newer_than}[/bold] for @{username}"
+            )
+        elif not force:
+            console.print(
+                f"[yellow]No scrape history found for @{username}. "
+                f"Run 'profile run {username}' first, or pass --force to do a full scan.[/yellow]"
+            )
+            raise typer.Exit(0)
+
+    try:
+        result = run_profile(
+            username,
+            newer_than=effective_newer_than,
+            keep_media=keep_media,
+            progress=console.print,
+        )
+    except ValueError as e:
+        console.print(f"[bold red]{e}[/bold red]")
+        raise typer.Exit(1)
+
+    console.print(
+        f"\n[bold green]Update finished![/bold green] "
+        f"Processed [bold]{result['processed']}[/bold] new post(s), "
+        f"failed {result['failed']}, skipped {result.get('skipped', 0)} by filter."
+    )
+    console.print(
+        f"@{username} — total indexed: {result['total_processed']} | "
+        f"total failed: {result.get('total_failed', result['failed'])}"
+    )
+
+
+@profile_app.command("sync")
+def sync_all_profiles(
+    keep_media: bool = typer.Option(False, "--keep-media", help="Keep downloaded media files after processing"),
+    force: bool = typer.Option(False, "--force", "-f", help="Ignore stored dates and do a full scan for each profile"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip per-profile confirmation"),
+):
+    """Update ALL configured profiles incrementally (new posts only since each profile's last run).
+
+    Profiles that have never been scraped are skipped unless --force is passed.
+    """
+    from config.profiles import list_profiles, load_profile
+    from src.pipeline import run_profile
+    from datetime import datetime, timezone
+
+    profiles = list_profiles()
+    if not profiles:
+        console.print("[yellow]No profiles configured yet.[/yellow]")
+        return
+
+    console.print(f"[bold blue]Syncing {len(profiles)} profile(s)…[/bold blue]")
+
+    results = []
+    for username in profiles:
+        profile = load_profile(username)
+        if not profile:
+            continue
+
+        effective_newer_than = None
+        if profile.last_scraped_at and not force:
+            dt = datetime.fromtimestamp(profile.last_scraped_at, tz=timezone.utc)
+            effective_newer_than = dt.strftime("%Y-%m-%d")
+        elif not profile.last_scraped_at and not force:
+            console.print(
+                f"[yellow]  @{username}: no scrape history — skipping "
+                f"(run 'profile update {username} --force' to do a full scan).[/yellow]"
+            )
+            continue
+
+        console.print(f"\n[bold]── @{username}[/bold]" + (f" (since {effective_newer_than})" if effective_newer_than else " (full scan)"))
+
+        try:
+            result = run_profile(
+                username,
+                newer_than=effective_newer_than,
+                keep_media=keep_media,
+                progress=console.print,
+            )
+            results.append({"username": username, "result": result})
+            console.print(
+                f"  [green]✓[/green] @{username}: +{result['processed']} processed, "
+                f"{result['failed']} failed, {result.get('skipped', 0)} filtered."
+            )
+        except Exception as e:
+            console.print(f"  [red]✗[/red] @{username}: {e}")
+            results.append({"username": username, "error": str(e)})
+
+    total_processed = sum(r["result"]["processed"] for r in results if "result" in r)
+    total_failed = sum(r["result"]["failed"] for r in results if "result" in r)
+    console.print(
+        f"\n[bold green]Sync complete![/bold green] "
+        f"{len(results)} profile(s) updated — "
+        f"{total_processed} new post(s) indexed, {total_failed} failed."
+    )
 
 
 @profile_app.command("list")
 def list_all_profiles():
     """List all configured profiles."""
     from config.profiles import list_profiles, load_profile
+    from datetime import datetime, timezone
+
     profiles = list_profiles()
     if not profiles:
         console.print("[yellow]No profiles configured yet.[/yellow]")
@@ -134,9 +281,14 @@ def list_all_profiles():
     for username in profiles:
         p = load_profile(username)
         if p:
+            last_scraped = "never"
+            if p.last_scraped_at:
+                dt = datetime.fromtimestamp(p.last_scraped_at, tz=timezone.utc)
+                last_scraped = dt.strftime("%Y-%m-%d %H:%M UTC")
             console.print(
                 f"  - @[bold]{p.username}[/bold] | mode: {p.analysis_mode} | audio_only: {p.audio_only} | "
-                f"processed: {len(p.processed_ids)} | failed: {len(p.failed_ids)}"
+                f"processed: {len(p.processed_ids)} | failed: {len(p.failed_ids)} | "
+                f"last scraped: {last_scraped}"
             )
 
 

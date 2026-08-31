@@ -46,6 +46,10 @@ def upsert_profile(db: Session, profile: Profile) -> Profile:
         existing.audio_only = profile.audio_only
         existing.processed_ids = profile.processed_ids
         existing.failed_ids = profile.failed_ids
+        if profile.last_scraped_at is not None:
+            existing.last_scraped_at = profile.last_scraped_at
+        if profile.last_run_at is not None:
+            existing.last_run_at = profile.last_run_at
         db.commit()
         db.refresh(existing)
         return existing

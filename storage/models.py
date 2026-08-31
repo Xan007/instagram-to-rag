@@ -17,6 +17,10 @@ class Profile(Base):
     audio_only = Column(Boolean, default=False)
     processed_ids = Column(JSON, default=list)
     failed_ids = Column(JSON, default=list)
+    # Tracking when the profile was last successfully scraped (Unix timestamp)
+    last_scraped_at = Column(Float, nullable=True, default=None)
+    # ISO-8601 string of the last pipeline run start time
+    last_run_at = Column(String, nullable=True, default=None)
 
 
 class Setting(Base):

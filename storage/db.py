@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from typing import Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -52,10 +52,38 @@ def _get_session_factory():
     return _SessionLocal
 
 
+def _migrate_profiles_table(engine) -> None:
+    """Add new columns to the profiles table for existing SQLite databases.
+
+    SQLite does not support ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so we
+    probe the column list and only run the statement when the column is missing.
+    """
+    url = str(engine.url)
+    if not url.startswith("sqlite"):
+        return  # Non-SQLite DBs rely on Alembic / proper migrations
+
+    with engine.connect() as conn:
+        cols_result = conn.execute(text("PRAGMA table_info(profiles)"))
+        existing_cols = {row[1] for row in cols_result}
+
+        new_cols = {
+            "last_scraped_at": "FLOAT",
+            "last_run_at": "VARCHAR",
+        }
+        for col_name, col_type in new_cols.items():
+            if col_name not in existing_cols:
+                conn.execute(
+                    text(f"ALTER TABLE profiles ADD COLUMN {col_name} {col_type}")
+                )
+        conn.commit()
+
+
 def init_db() -> None:
-    """Create all tables."""
+    """Create all tables and apply lightweight inline migrations."""
     from storage.models import Base
-    Base.metadata.create_all(bind=get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    _migrate_profiles_table(engine)
 
 
 def get_db() -> Generator[Session, None, None]:

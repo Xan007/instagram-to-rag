@@ -11,6 +11,10 @@ class ProfileConfig:
     analysis_mode: str = "gemini"
     audio_only: bool = False
     failed_ids: List[str] = field(default_factory=list)
+    # Unix timestamp of the last successful scrape (used by `profile update`)
+    last_scraped_at: Optional[float] = None
+    # ISO-8601 string of the last pipeline run start time
+    last_run_at: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)
@@ -37,6 +41,8 @@ def _to_model(profile: ProfileConfig):
         analysis_mode=profile.analysis_mode,
         audio_only=profile.audio_only,
         failed_ids=profile.failed_ids,
+        last_scraped_at=profile.last_scraped_at,
+        last_run_at=profile.last_run_at,
     )
 
 
@@ -49,6 +55,8 @@ def _from_model(model) -> ProfileConfig:
         analysis_mode=model.analysis_mode or "gemini",
         audio_only=model.audio_only or False,
         failed_ids=model.failed_ids or [],
+        last_scraped_at=getattr(model, "last_scraped_at", None),
+        last_run_at=getattr(model, "last_run_at", None),
     )
 
 
