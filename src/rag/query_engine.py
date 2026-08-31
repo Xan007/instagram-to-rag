@@ -2,7 +2,7 @@ import logging
 import os
 import re
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from pinecone import Pinecone
 from google import genai
 from config.env import load_runtime_env
@@ -132,11 +132,11 @@ User Question:
         cited = set(_CITATION_RE.findall(answer))
         return [{**src, "cited": str(i) in cited} for i, src in enumerate(sources, start=1)]
 
-    def _condense_question(self, question: str, pairs: List[Dict[str, str]]) -> str:
+    def _condense_question(self, question: str, pairs: List[Tuple[str, str]]) -> str:
         if not pairs:
             return question.strip()
 
-        history_text = "\n".join(f"{t['role'].capitalize()}: {t['content']}" for t in pairs)
+        history_text = "\n".join(f"{role.capitalize()}: {content}" for role, content in pairs)
         prompt = f"""Given the following conversation and a follow-up question, rephrase the follow-up question to be a standalone search query that contains all necessary context from previous turns. Do NOT answer the question. Only return the standalone question in the same language.
 
 Conversation:
