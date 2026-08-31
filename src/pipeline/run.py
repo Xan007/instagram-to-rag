@@ -103,62 +103,58 @@ def scrape_profile(
                 "message": "No new posts found — profile is up to date.",
             }
 
-        def download_task(post: Dict[str, Any]):
+        def process_post_task(post: Dict[str, Any]):
+            post_id = post["id"]
+            post_url = post["url"]
+            post_type = post.get("type", "Post")
+            description = post.get("description", "")
             media_items = post.get("media_items", [])
-            if is_whisper:
-                video_urls = [m["url"] for m in media_items if m.get("type") == "video"]
-                sources = [post["url"]] if post.get("url") and video_urls else []
-                sources += [u for u in video_urls if u != post.get("url")]
-                return post, [], sources
-            downloaded = downloader.download_media_items(media_items, post["id"]) if media_items else []
-            return post, downloaded, []
 
-        progress(f"Processing {len(all_posts)} post(s) with parallel downloads…")
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(download_task, p): p for p in all_posts}
-            for idx, future in enumerate(as_completed(futures), 1):
-                post, downloaded, audio_sources = future.result()
-                post_id = post["id"]
-                post_url = post["url"]
-                post_type = post.get("type", "Post")
-                description = post.get("description", "")
+            downloaded = []
+            audio_sources = []
+            try:
+                progress(f"  Starting download: {post_type} {post_url}")
+                if is_whisper:
+                    video_urls = [m["url"] for m in media_items if m.get("type") == "video"]
+                    audio_sources = [post["url"]] if post.get("url") and video_urls else []
+                    audio_sources += [u for u in video_urls if u != post.get("url")]
+                elif media_items:
+                    downloaded = downloader.download_media_items(media_items, post_id) or []
 
-                progress(f"  [{idx}/{len(all_posts)}] {post_type}: {post_url}")
-
-                if downloaded:
-                    progress(f"    Downloaded {len(downloaded)} file(s).")
-                elif is_whisper and audio_sources:
-                    progress(f"    Audio sources: {len(audio_sources)}")
-                else:
-                    progress("    No media — caption only.")
-
-                try:
-                    progress("    Analyzing…")
-                    if is_whisper:
-                        extracted = analyzer.extract_knowledge(
-                            downloaded, description, video_urls=audio_sources
-                        )
-                    else:
-                        extracted = analyzer.extract_knowledge(downloaded, description)
-
-                    indexer.index_post(
-                        post_id=post_id,
-                        url=post_url,
-                        creator_username=username,
-                        post_type=post_type,
-                        description=description,
-                        extracted_text=extracted,
+                progress(f"  Analyzing content for {post_id}...")
+                if is_whisper:
+                    extracted = analyzer.extract_knowledge(
+                        downloaded, description, video_urls=audio_sources
                     )
-                    new_post_ids.append(post_id)
-                    progress(f"    ✓ Indexed {post_id}")
+                else:
+                    extracted = analyzer.extract_knowledge(downloaded, description)
 
-                except Exception as e:
-                    progress(f"    ✗ Error on {post_id}: {e}")
-                    failed_ids.append(post_id)
+                indexer.index_post(
+                    post_id=post_id,
+                    url=post_url,
+                    creator_username=username,
+                    post_type=post_type,
+                    description=description,
+                    extracted_text=extracted,
+                )
+                progress(f"  ✓ Indexed {post_id}")
+                return "ok", post_id, None
+            except Exception as err:
+                progress(f"  ✗ Error on {post_id}: {err}")
+                return "error", post_id, err
+            finally:
+                if downloaded and not keep_media:
+                    downloader.cleanup_items(downloaded)
 
-                finally:
-                    if downloaded and not keep_media:
-                        downloader.cleanup_items(downloaded)
+        progress(f"Processing {len(all_posts)} post(s) concurrently (download + analyze + index)...")
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(process_post_task, p): p for p in all_posts}
+            for future in as_completed(futures):
+                status, pid, err = future.result()
+                if status == "ok":
+                    new_post_ids.append(pid)
+                else:
+                    failed_ids.append(pid)
 
     except Exception as e:
         progress(f"Pipeline error: {e}")
