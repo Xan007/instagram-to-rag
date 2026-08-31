@@ -1,14 +1,35 @@
-# Indexer & RAG Modules (`src/indexer/` & `src/rag/`)
+# Indexer and RAG Architecture
 
-## Vector Indexer (`src/indexer/pinecone_indexer.py`)
-- Manages the cloud vector database index on Pinecone (`instarag`).
-- Uses **`gemini-embedding-001`** (3072 dimensions) to generate semantic vector representations of each post's extracted knowledge.
-- Automatically provisions a Pinecone Serverless index (`aws / us-east-1`) if it does not already exist.
-- Upserts metadata alongside vectors: `post_id`, `username`, `url`, `type`, `original_description`, and `extracted_knowledge`.
-- Maintains a local JSON backup under `data/processed/<post_id>.json`.
+## Indexer (`src/indexer/pinecone_indexer.py`)
 
-## RAG Query Engine (`src/rag/query_engine.py`)
-- Translates natural language user questions into vector embeddings.
-- Performs cosine similarity search in Pinecone to retrieve top matching knowledge chunks (with optional creator filtering via `--creator`).
-- Synthesizes grounded answers using **`gemini-3.6-flash`**.
-- Guarantees strict provenance: every response includes verified direct links to the creator's original Instagram post.
+- **Model:** `gemini-embedding-001` (dimension 3072, metric `cosine`).
+- **Serverless Spec:** AWS `us-east-1`.
+- **Deduplication:** Each Instagram post is indexed **once globally**. The vector ID format is `{creator}_{post_id}` or `{post_id}`.
+- **Stored Metadata per Vector:**
+  - `post_id`: Shortcode identifier of the Instagram post.
+  - `creator_username`: Instagram creator username.
+  - `url`: Original Instagram URL.
+  - `type`: Content type (`Post`, `Reel`, `Sidecar`, `Video`, `Image`).
+  - `original_description`: Post caption snippet (up to 1,000 characters).
+  - `extracted_knowledge`: Structured markdown knowledge summary (up to 8,000 characters).
+
+---
+
+## Query Engine (`src/rag/query_engine.py`)
+
+### 1. Scoped Agent Filtering
+When querying a custom Group Agent, Pinecone applies metadata filtering:
+```python
+filter = {"post_id": {"$in": ["C8xyz123", "D9abc456", ...]}}
+```
+When querying across a creator:
+```python
+filter = {"creator_username": {"$eq": "nutricionista_experto"}}
+```
+
+### 2. Multi-Turn Conversation Condensation
+Follow-up questions are resolved in a stateless manner: prior message turns are passed to Gemini to generate an autonomous standalone retrieval query before embedding.
+
+### 3. Dual Response Modes
+- **`grounded_plus` (Default):** Answers strictly using the retrieved context from creator posts with `[Source N]` citations. Appends a clearly separated general-knowledge section only if it adds necessary context.
+- **`strict`:** Pure creator provenance. Refuses to answer if the creator's posts do not contain the answer.

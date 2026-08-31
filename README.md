@@ -2,180 +2,96 @@
 
 # InstaRAG
 
-[![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12%20|%203.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Google Gemini](https://img.shields.io/badge/Google%20Gemini-embedding%20%2B%20analysis-4285F4?logo=googlegemini&logoColor=white)](https://ai.google.dev/)
+[![Pinecone](https://img.shields.io/badge/Pinecone-vector%20DB-000000?logo=pinecone&logoColor=white)](https://www.pinecone.io/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-HTTP%20API-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
 </div>
 
-InstaRAG turns Instagram content into a queryable knowledge base. It scrapes profiles and saved posts through Apify actors, extracts dense knowledge from videos and images with Gemini multimodal analysis, indexes everything into a Pinecone vector database, and serves grounded RAG answers through both a CLI and an HTTP API designed for UI consumption.
+**InstaRAG** is a modular, multi-account Instagram knowledge extraction pipeline and Retrieval-Augmented Generation (RAG) platform. It ingests Instagram creator profiles, individual reels, and user saved post exports, extracts dense factual knowledge via Gemini multimodal analysis, indexes deduplicated semantic vectors into Pinecone, and allows users to build, query, and share custom topic-scoped **RAG Agents (Groups)** (e.g. *Fitness*, *Recetas*, *Biohacking*).
 
-No Instagram sessions or cookies are used anywhere: media comes from actor-provided CDN URLs or yt-dlp.
+---
 
-## Features
+## 🌟 Key Capabilities
 
-- **Profile pipelines** — scrape → interest filter (batched LLM call) → download → analyze → index, with per-profile dedup and resume.
-- **Saved posts** — import your Instagram data export (`zip` or `saved_posts.json`) and process every saved post without interest filtering.
-- **Reels by URL** — ingest one or many posts/reels in a single call via the official `apify/instagram-scraper` actor; videos download straight over HTTP.
-- **Structured knowledge extraction** — fixed markdown sections, literal numbers (sets×reps, grams, seconds), on-screen text and spoken key points preserved.
-- **Grounded RAG answers** — citations with `[Source N]`, `cited` flag per source, dual answer mode (`grounded_plus` default / `strict`), similarity threshold, tunable retrieval.
-- **Multi-turn conversations** — stateless history contract; follow-ups like "¿y para principiantes?" are condensed into standalone search queries before retrieval.
-- **HTTP API** — FastAPI with background jobs (serialized worker, live logs echoed to console) and auto-generated OpenAPI docs at `/docs`.
-- **Database backend** — SQLAlchemy with SQLite (default), easily switchable to PostgreSQL/Supabase via `INSTARAG_DATABASE_URL`.
+- **👥 Multi-Account & Scoped RAG Agents (Groups):** Create distinct agents per account, assign specific posts by interest or direct URL, and share agents with other accounts with read permissions.
+- **⚡ Global Knowledge Deduplication:** Ingests creator posts and reels globally once. N users tracking the same creator or saving the same video never causes duplicate extraction or vector clutter.
+- **🌐 Database & Auth Agnostic:** Backed by SQLAlchemy 2.0. Switch between SQLite, PostgreSQL, Supabase, or Neon via a single `INSTARAG_DATABASE_URL` environment variable.
+- **📊 Dense Multimodal Knowledge:** Structured fact sheets, numbers (sets×reps, grams, seconds), on-screen text, and spoken transcripts extracted from videos and carousel slides.
+- **🎯 Provenance & Dual RAG Modes:** Source citations `[Source N]` with direct Instagram URLs, confidence thresholds, and dual answer modes (`grounded_plus` default / `strict`).
+- **💬 Multi-Turn Follow-Ups:** Stateless chat history condensation (e.g., handles questions like "¿y para principiantes?").
+- **☁️ Cloud & Docker Ready:** Containerized with healthchecks, non-root user, dynamic `$PORT` detection, and `docker-compose.yml`.
 
-## Tech Stack
+---
 
-- Python 3.14 + uv
-- Google Gemini — multimodal extraction, embeddings (`gemini-embedding-001`), answer generation
-- Pinecone serverless — vector database
-- SQLAlchemy + SQLite — relational storage (profiles, settings, saved posts, processed knowledge)
-- Apify actors — `sones/instagram-posts-scraper-lowcost` (profiles), `apify/instagram-scraper` (URLs)
-- FastAPI + Uvicorn (HTTP API) · Typer + Rich (CLI)
-- yt-dlp (fallback downloads) · faster-whisper / OpenAI Whisper (optional audio transcription)
+## 🛠️ Quickstart
 
-## Installation
-
+### 1. Installation
 ```bash
-uv sync                # CLI only
-uv sync --extra api    # CLI + HTTP API
+uv sync --extra api
 ```
 
-### Install once, use from any folder (Windows CMD/PowerShell)
-
-```bash
-uv tool install --from . instarag
-uv tool update-shell
-```
-
-Then open a new terminal and run:
-
-```bash
-instarag --help
-```
-
-### Build a Windows `.exe`
-
-```bash
-uv tool run pyinstaller --onefile --name instarag main.py
-```
-
-Binary output:
-- `dist/instarag.exe`
-
-## Configuration
-
-Create a `.env` file with your own keys:
-
+### 2. Configuration
+Copy `.env.example` to `.env` and fill in your keys:
 ```env
-GEMINI_API_KEY=your_key
-PINECONE_API_KEY=your_key
-APIFY_API_KEY=your_apify_token
+GEMINI_API_KEY=your_gemini_api_key
+PINECONE_API_KEY=your_pinecone_api_key
+APIFY_API_KEY=your_apify_api_key
+# Optional (defaults to SQLite):
+# INSTARAG_DATABASE_URL=postgresql://postgres:pass@db.xxx.supabase.co:5432/postgres
 ```
 
-Optional API settings:
+---
 
-| Variable | Purpose |
-| --- | --- |
-| `INSTARAG_API_KEY` | Require an `X-API-Key` header on every endpoint |
-| `INSTARAG_CORS_ORIGINS` | Comma-separated browser origins allowed to call the API |
-| `INSTARAG_DATA_DIR` | Media/state root (default `./data`) |
-| `INSTARAG_CONFIG_DIR` | Settings/profiles root (default `~/.instarag`) |
-| `INSTARAG_HOST` / `INSTARAG_PORT` | API bind address |
-| `INSTARAG_DATABASE_URL` | Database URL (default `sqlite://~/.instarag/instarag.db`). Use `postgresql://...` for PostgreSQL |
-
-For the `.exe`, each user should configure their own keys in one of these locations:
-- `.\.env` (same folder where `instarag.exe` is located)
-- `~/.instarag/.env` (recommended for persistent per-user setup)
-- System environment variables
-
-## Usage
+## 💻 CLI Usage
 
 ```bash
-# Add a profile and process it
-instarag profile add <username> --interests "recetas, dieta" --max-posts 50
-instarag run <username>
+# 1. Manage accounts
+python main.py user create juan
+python main.py user create maria
 
-# Ingest one or many reels/posts by URL (no login needed)
-instarag add-reel https://www.instagram.com/reel/ABC/ https://www.instagram.com/p/DEF/
+# 2. Scrape & index a creator globally
+python main.py profile add nutricionista_experto
+python main.py profile scrape nutricionista_experto --max-posts 100
+python main.py profile update nutricionista_experto  # incremental update
 
-# Process saved posts from an Instagram data export
-instarag saved import export.zip
-instarag saved process
+# 3. Create & populate a scoped RAG Agent group
+python main.py group create RecetasSaludables --user juan --desc "Recetas de cocina saludable"
+python main.py group add-from-profile RecetasSaludables nutricionista_experto --interests "recetas, desayunos, comidas" --user juan
+python main.py group add-post RecetasSaludables "https://www.instagram.com/reel/C8xyz123/" --user juan
+python main.py group share RecetasSaludables maria --user juan
 
-# Ask questions (grounded_plus by default)
-instarag query "your question here" --creator <your_target>
-instarag query "..." --mode strict --top-k 12
+# 4. Import user saved posts from IG export
+python main.py saved import export.zip --user juan
+python main.py saved process --user juan
 
-# Interactive multi-turn chat
-instarag chat --creator <your_target>
+# 5. Query and Chat
+python main.py query "¿Qué opciones de desayuno recomienda?" --group RecetasSaludables --user juan
+python main.py chat --group RecetasSaludables --user maria
 ```
 
-## HTTP API
+---
 
+## 🚀 HTTP API & Deployment
+
+Run the FastAPI service:
 ```bash
-uv run src/api/app.py      # http://127.0.0.1:8000 — OpenAPI docs at /docs
+uv run python -m src.api.main
+# Interactive OpenAPI Docs available at http://127.0.0.1:8000/docs
 ```
 
+Run with Docker:
 ```bash
-curl -X POST http://127.0.0.1:8000/query -H "Content-Type: application/json" -d '{
-  "question": "¿y para principiantes?",
-  "history": [
-    {"role": "user", "content": "rutina de calistenia de espalda"},
-    {"role": "assistant", "content": "dominadas, remos australianos..."}
-  ]
-}'
+docker compose up -d --build
 ```
 
-Heavy operations (`run`, `add-reel`, `saved-process`) return `202` with a `job_id`; poll `GET /jobs/{id}` for status and live logs.
+---
 
-### Docker (any host)
+## 📚 Documentation
 
-```bash
-docker build -t instarag-api .
-docker run -p 8000:8000 -v instarag-data:/data \
-  -e GEMINI_API_KEY=... -e PINECONE_API_KEY=... -e APIFY_API_KEY=... \
-  instarag-api
-```
-
-See [docs/api.md](docs/api.md) for the full endpoint table and an Azure Container Apps example.
-
-## Commands
-
-| Command | Description |
-| --- | --- |
-| `profile` | Manage Instagram profiles |
-| `run` | Extract and index knowledge from a profile |
-| `saved` | Import and process saved posts |
-| `add-reel` | Add one or more reels/posts by URL |
-| `query` | Ask the knowledge base (supports `--history` for follow-ups) |
-| `chat` | Interactive multi-turn conversation |
-| `config` | Configure global settings |
-
-## Testing
-
-```bash
-uv sync --extra api   # once (installs API deps + pytest)
-uv run pytest         # unit + HTTP API tests (no network, isolated temp state)
-```
-
-## Documentation
-
-- [Usage guide](docs/usage.md)
-- [HTTP API](docs/api.md)
-- [Architecture](docs/architecture.md)
-- [Indexer and RAG](docs/modules/indexer_and_rag.md)
-
-## Storage
-
-All persistent data is stored in a single SQLite database (default `~/.instarag/instarag.db`):
-
-- **profiles** — tracked Instagram profiles and settings
-- **settings** — app configuration
-- **saved_posts** — imported saved posts from Instagram data export
-- **processed_posts** — extracted knowledge from analyzed posts
-
-To use PostgreSQL or Supabase instead, set `INSTARAG_DATABASE_URL` in your `.env`:
-
-```env
-INSTARAG_DATABASE_URL=postgresql://user:password@localhost:5432/instarag
-```
+- [Architecture & Design](docs/architecture.md)
+- [CLI Usage Guide](docs/usage.md)
+- [HTTP API Reference](docs/api.md)
+- [Indexer and RAG Pipeline](docs/modules/indexer_and_rag.md)

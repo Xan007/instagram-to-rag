@@ -6,121 +6,102 @@ Ensure your `.env` file contains your API keys:
 GEMINI_API_KEY=your_gemini_api_key
 APIFY_API_KEY=your_apify_api_token
 PINECONE_API_KEY=your_pinecone_api_key
+# Optional: PostgreSQL / Supabase / Neon connection
+# INSTARAG_DATABASE_URL=postgresql://postgres:password@db.xxx.supabase.co:5432/postgres
 ```
 
-When using `instarag.exe`, each user must provide their own keys. Supported locations:
-- `.env` next to `instarag.exe`
-- `~/.instarag/.env` (recommended)
-- OS environment variables
+---
 
-## Run as a global CLI (install once)
+## Command Reference
 
-From the repository root:
+### 1. User Management
+Manage local user accounts:
+```bash
+# Create a user account
+python main.py user create juan
+python main.py user create maria
+
+# List accounts
+python main.py user list
+```
+
+---
+
+### 2. Instagram Creator Profiles (Global Ingestion)
+Scrape and index creator profiles globally (deduplicated across all users):
 
 ```bash
-uv tool install --from . instarag
-uv tool update-shell
+# Register a creator profile
+python main.py profile add nutricionista_experto
+
+# Scrape all posts (no interest filter, indexed once into DB & Pinecone)
+python main.py profile scrape nutricionista_experto --max-posts 100
+
+# Incremental update (only scrapes posts newer than last run)
+python main.py profile update nutricionista_experto
+
+# List all registered creator profiles
+python main.py profile list
 ```
 
-Restart your terminal and use:
+---
+
+### 3. Custom RAG Agents & Groups
+Create topic-specific collections/agents (e.g. Food, Fitness, Biohacking), populate them, and share them:
 
 ```bash
-instarag --help
+# Create a new RAG Agent Group
+python main.py group create RecetasSaludables --user juan --desc "Recetas altas en proteína y tips de cocina"
+
+# Populate the group from an indexed creator, applying interest filtering
+python main.py group add-from-profile RecetasSaludables nutricionista_experto --interests "recetas, comidas, desayunos" --user juan
+
+# Add an individual Reel by URL or Shortcode ID directly to the group
+python main.py group add-post RecetasSaludables "https://www.instagram.com/reel/C8xyz123/" --user juan
+
+# List your groups (shows owned and shared groups)
+python main.py group list --user juan
+
+# Share your agent with another account
+python main.py group share RecetasSaludables maria --user juan
 ```
 
-## Commands
+---
 
-### 1. Profile Management
-Add creators and specify tailored topics of interest:
-```bash
-# Add or update a profile
-uv run python main.py profile add bejaranofit --interests "recetas, dieta, comida" --max-posts 50
-
-# List all configured profiles and their progress
-uv run python main.py profile list
-```
-
-### 2. Knowledge Ingestion Pipeline
-Run the extraction pipeline on a profile:
-```bash
-uv run python main.py run bejaranofit
-```
-- Scrapes metadata from Instagram via Apify.
-- Filters posts matching your defined interests.
-- Downloads images, carousel slides, and videos.
-- Extracts dense factual knowledge using Gemini multimodal vision & audio understanding.
-- Indexes semantic vectors and full metadata into Pinecone.
-- Saves a backup JSON locally in `data/processed/`.
-- Deletes heavy media files immediately.
-
-### 3. Saved Posts (Instagram data export)
-Import your Instagram saved posts and index them ALL, without interest filtering:
+### 4. Saved Posts (Instagram Data Export)
+Import and index saved posts per user account:
 
 ```bash
-# Import from a zip export (only saved_posts.json is extracted; all other
-# personal data in the archive is discarded for privacy)
-uv run python main.py saved import instagram-export.zip
+# Import your Instagram data export (zip or saved_posts.json)
+python main.py saved import ruta/a/tu_export.zip --user juan
 
-# Or reference a plain saved_posts.json directly
-uv run python main.py saved import your_instagram_activity/saved/saved_posts.json
-
-# Show import/processing status
-uv run python main.py saved status
-
-# Process every pending saved post (parallel: 4 workers for download + analysis)
-uv run python main.py saved process
-
-# Control parallelism or process captions only (no media download)
-uv run python main.py saved process --workers 8
-uv run python main.py saved process --caption-only
-
-# Process only the first N pending posts (useful for testing)
-uv run python main.py saved process --limit 5
-
-# Clear processed/failed history to re-process everything
-uv run python main.py saved reset
+# Download, extract knowledge, and index pending saved posts
+python main.py saved process --user juan --workers 4
 ```
-- All saved posts are processed regardless of profile interests.
-- Posts already indexed via any profile (or a previous saved run) are skipped automatically.
-- Instagram's data export contains NO media for saved posts, so each post's media is fetched from its URL with yt-dlp (video + audio merged via ffmpeg); if that fails, the caption is analyzed instead.
-- Indexed under the `saved` collection: `uv run python main.py query "..." --creator saved`.
 
-### Adding reels/posts by URL
+---
+
+### 5. Ingesting Reels by URL
+Ingest standalone Reels without an associated profile:
 ```bash
-# One or many URLs at once (uses apify/instagram-scraper; no login needed)
-uv run python main.py add-reel https://www.instagram.com/reel/ABC/ https://www.instagram.com/p/DEF/
-
-# Associate with a creator for duplicate tracking
-uv run python main.py add-reel <url> --creator bejaranofit
-
-# Analyze caption only (no media download)
-uv run python main.py add-reel <url> --caption-only
+python main.py add-reel https://www.instagram.com/reel/ABC/ https://www.instagram.com/p/DEF/
 ```
-- Metadata and direct media URLs come from the official `apify/instagram-scraper` Actor; videos are downloaded straight over HTTP.
-- If Apify is unavailable, it falls back per URL to yt-dlp.
-- Via API: `POST /jobs/add-reel {"urls": ["...", "..."]}`.
 
-### 4. Querying the Knowledge Base (RAG)
-Ask questions in natural language and receive grounded answers with direct links:
+---
+
+### 6. Querying & Interactive Chat
+Ask questions across global knowledge or scoped to a custom Group Agent:
+
 ```bash
-# Query across all creators (grounded_plus: creator content first; any general
-# knowledge added is clearly labeled and never attributed to the creators)
-uv run python main.py query "¿Cómo preparar una pasta alta en proteínas?"
+# Query a specific Group Agent
+python main.py query "¿Qué opciones de desayuno rápido recomienda?" --group RecetasSaludables --user juan
 
-# Query filtered by a specific creator
-uv run python main.py query "¿Qué ejercicios recomienda para espalda?" --creator bejaranofit
+# Query across a specific creator
+python main.py query "¿Qué opina del ayuno intermitente?" --creator nutricionista_experto
 
-# Absolute provenance: refuse instead of supplementing with general knowledge
-uv run python main.py query "..." --mode strict
+# Query in strict mode (no general knowledge fallback)
+python main.py query "..." --group RecetasSaludables --user juan --mode strict --top-k 10
 
-# Tune retrieval: more candidates, stricter trust threshold
-uv run python main.py query "..." --top-k 12 --min-score 0.5
-
-# Follow-up using a prior conversation (stateless: the file is client-side)
-uv run python main.py query "¿y para principiantes?" --history turns.json
-
-# Interactive multi-turn chat (history kept in-process, sent every turn)
-uv run python main.py chat --creator bejaranofit
+# Interactive multi-turn chat with an Agent (supports follow-ups like "¿y para principiantes?")
+python main.py chat --group RecetasSaludables --user maria
 ```
-- Matches below `--min-score` are discarded; if nothing is relevant enough you get an honest "no encontré contenido" answer plus the closest indexed links.
-- The original post caption is included in the context alongside the extracted knowledge.
