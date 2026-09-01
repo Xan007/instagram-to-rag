@@ -9,9 +9,10 @@ def query_knowledge(
     user_id: Optional[str] = None,
     *,
     top_k: int = 6,
-    min_score: float = 0.35,
+    min_score: float = 0.25,
     mode: str = "grounded_plus",
     history: Optional[List[Dict[str, Any]]] = None,
+    artifact_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     from src.rag.query_engine import QueryEngine
 
@@ -33,5 +34,7 @@ def query_knowledge(
         min_score=min_score,
         mode=mode,
         history=history,
+        artifact_type=artifact_type,
     )
+
 

@@ -268,6 +268,7 @@ def query_cmd(
     group: Optional[str] = typer.Option(None, "--group", "-g", help="Scope question to a specific RAG agent group"),
     creator: Optional[str] = typer.Option(None, "--creator", "-c", help="Scope question to a creator"),
     mode: str = typer.Option("grounded_plus", "--mode", help="'grounded_plus' or 'strict'"),
+    artifact: Optional[str] = typer.Option(None, "--artifact", "-a", help="'workout_plan', 'recipe_book', or 'grocery_list'"),
     top_k: int = typer.Option(6, "--top-k", help="Top matches"),
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Account username"),
 ):
@@ -277,7 +278,15 @@ def query_cmd(
         uid = _get_active_user(user)
 
     try:
-        res = query_knowledge(question, creator=creator, group_name=group, user_id=uid, top_k=top_k, mode=mode)
+        res = query_knowledge(
+            question,
+            creator=creator,
+            group_name=group,
+            user_id=uid,
+            top_k=top_k,
+            mode=mode,
+            artifact_type=artifact,
+        )
         console.print("\n[bold green]=== Answer ===[/bold green]\n")
         console.print(res["answer"])
         if res.get("sources"):
@@ -288,6 +297,7 @@ def query_cmd(
     except Exception as e:
         console.print(f"[bold red]Query failed:[/bold red] {e}")
         raise typer.Exit(1)
+
 
 
 @app.command("chat")

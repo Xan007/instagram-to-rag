@@ -99,10 +99,15 @@ class ChatTurn(BaseModel):
 class QueryIn(BaseModel):
     question: str
     creator: Optional[str] = None
+    group_name: Optional[str] = None
+    user_id: Optional[str] = None
     mode: str = "grounded_plus"
     top_k: int = 6
     min_score: float = 0.35
     history: Optional[List[ChatTurn]] = None
+    artifact_type: Optional[str] = None
+
+
 
 
 
@@ -372,15 +377,27 @@ def query(body: QueryIn, _: None = Depends(require_api_key)) -> Dict[str, Any]:
     from src.pipeline import query_knowledge
 
     try:
+        kwargs = {
+            "top_k": body.top_k,
+            "min_score": body.min_score,
+            "mode": body.mode,
+            "history": history_dicts,
+        }
+        if body.group_name:
+            kwargs["group_name"] = body.group_name
+        if body.user_id:
+            kwargs["user_id"] = body.user_id
+        if body.artifact_type:
+            kwargs["artifact_type"] = body.artifact_type
+
         return query_knowledge(
             body.question,
             body.creator,
-            top_k=body.top_k,
-            min_score=body.min_score,
-            mode=body.mode,
-            history=history_dicts,
+            **kwargs,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Query failed: {e}")
+
+
