@@ -7,13 +7,11 @@ from google import genai
 logger = logging.getLogger(__name__)
 
 FALLBACK_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
-    "gemini-2.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-flash-lite-latest",
 ]
-
 
 
 class GeminiLLMClient:
@@ -47,6 +45,8 @@ class GeminiLLMClient:
 
         last_error = None
         for mod in models_to_try:
+            if not mod:
+                continue
             for attempt in range(2):
                 try:
                     chat = self.client.chats.create(model=mod)
@@ -55,13 +55,18 @@ class GeminiLLMClient:
                 except Exception as e:
                     last_error = e
                     err_str = str(e)
-                    if "503" in err_str or "UNAVAILABLE" in err_str:
-                        logger.info("Gemini model %s 503 unavailable. Trying next model...", mod)
+                    if "404" in err_str or "NOT_FOUND" in err_str:
+                        logger.info("Gemini model %s not found (404). Trying next model...", mod)
+                        break
+                    elif "503" in err_str or "UNAVAILABLE" in err_str:
+                        logger.info("Gemini model %s unavailable (503). Trying next model...", mod)
                         break
                     elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                        logger.info("Rate limit on %s. Waiting 10s...", mod)
-                        time.sleep(10)
+                        logger.info("Rate limit on %s (429). Trying next model...", mod)
+                        break
                     else:
+                        logger.info("Error on model %s: %s. Trying next model...", mod, e)
                         break
 
         raise RuntimeError(f"All Gemini models failed: {last_error}")
+

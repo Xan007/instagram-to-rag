@@ -305,10 +305,11 @@ def query_cmd(
                 title=title,
                 sources=res.get("sources"),
             )
-            console.print(f"\n[bold green]✓ Artifact exported successfully to:[/bold green] [cyan]{exported_path}[/cyan]")
+            console.print(f"\n[bold green][OK] Artifact exported successfully to:[/bold green] [cyan]{exported_path}[/cyan]")
     except Exception as e:
         console.print(f"[bold red]Query failed:[/bold red] {e}")
         raise typer.Exit(1)
+
 
 
 
