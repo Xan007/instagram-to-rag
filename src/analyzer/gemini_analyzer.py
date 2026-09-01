@@ -1,12 +1,10 @@
 import logging
 import os
 import time
-import warnings
-from typing import List, Dict
+from typing import Dict, List, Optional
 from google import genai
 from config.env import load_runtime_env
 
-warnings.filterwarnings("ignore")
 load_runtime_env()
 
 logger = logging.getLogger(__name__)
@@ -14,7 +12,7 @@ logger = logging.getLogger(__name__)
 FALLBACK_MODELS = [
     "gemini-3.5-flash-lite",
     "gemini-3.7-flash",
-    "gemini-3.6-flash"
+    "gemini-3.6-flash",
 ]
 
 EXTRACTION_PROMPT_TEMPLATE = """
@@ -58,46 +56,42 @@ Output format (markdown, use these exact section headers; omit a section only if
 
 
 def build_extraction_prompt(post_description: str) -> str:
-    """Assemble the multimodal extraction prompt. Pure function."""
     return EXTRACTION_PROMPT_TEMPLATE.format(post_description=post_description.strip())
 
+
 class GeminiAnalyzer:
-    def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
+    def __init__(self, api_key: Optional[str] = None):
+        key = api_key or os.getenv("GEMINI_API_KEY")
+        if not key:
             raise ValueError("GEMINI_API_KEY environment variable is not set.")
-        self.client = genai.Client(api_key=api_key)
-        
+        self.client = genai.Client(api_key=key)
+
     def extract_knowledge(self, media_files: List[Dict[str, str]], post_description: str) -> str:
-        """
-        Uploads media files to Gemini and extracts structured knowledge.
-        Automatically falls back across multiple Gemini models if 503 UNAVAILABLE or 429 occurs.
-        """
         uploaded_files = []
         try:
             for item in media_files:
                 path = item["path"]
                 logger.info("Uploading %s %s to Gemini...", item["type"], path)
                 gfile = self.client.files.upload(file=path)
-                
+
                 if item["type"] == "video":
                     while gfile.state.name == "PROCESSING":
                         logger.info("Waiting for video processing...")
                         time.sleep(2)
                         gfile = self.client.files.get(name=gfile.name)
-                        
+
                     if gfile.state.name == "FAILED":
                         logger.warning("Processing failed for %s", path)
                         continue
-                        
+
                 uploaded_files.append(gfile)
-                
+
             prompt = build_extraction_prompt(post_description)
             contents = uploaded_files + [prompt] if uploaded_files else [prompt]
-            
+
             last_error = None
             for model_name in FALLBACK_MODELS:
-                for attempt in range(2):
+                for _ in range(2):
                     try:
                         chat = self.client.chats.create(model=model_name)
                         response = chat.send_message(contents)
@@ -106,19 +100,20 @@ class GeminiAnalyzer:
                         last_error = e
                         err_str = str(e)
                         if "503" in err_str or "UNAVAILABLE" in err_str:
-                            logger.info("Model %s is experiencing 503 high demand. Trying next model...", model_name)
+                            logger.info("Model %s unavailable. Trying next model...", model_name)
                             break
-                        elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
                             logger.info("Rate limit on %s. Waiting 10s...", model_name)
                             time.sleep(10)
                         else:
                             break
-                            
+
             raise RuntimeError(f"All fallback models failed for knowledge extraction: {last_error}")
-            
+
         finally:
             for gfile in uploaded_files:
                 try:
                     self.client.files.delete(name=gfile.name)
                 except Exception:
                     pass
+

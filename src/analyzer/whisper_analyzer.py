@@ -2,27 +2,13 @@ import glob
 import logging
 import os
 import uuid
-import warnings
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 from yt_dlp import YoutubeDL
-
-warnings.filterwarnings("ignore")
 
 logger = logging.getLogger(__name__)
 
 
 class WhisperAnalyzer:
-    """Analyze audio using Whisper.
-
-    Supports two modes:
-    * ``local_whisper`` – uses the ``faster-whisper`` library on the local CPU.
-    * ``openai_whisper`` – uses OpenAI's Whisper API (model ``whisper-1``).
-
-    Instead of downloading the full video, audio sources are fetched with
-    yt-dlp (``bestaudio``). For Instagram post URLs this pulls the separate
-    DASH audio stream (~1-3 MB) instead of the whole mp4 (20-60 MB).
-    """
-
     def __init__(self, mode: str = "local_whisper", download_dir: str = "data/raw"):
         if mode not in {"local_whisper", "openai_whisper"}:
             raise ValueError("mode must be 'local_whisper' or 'openai_whisper'")
@@ -31,7 +17,6 @@ class WhisperAnalyzer:
         if self.mode == "local_whisper":
             try:
                 from faster_whisper import WhisperModel
-                # Small model with int8 CPU quantisation for speed and low memory
                 self.model = WhisperModel("small", device="cpu", compute_type="int8")
             except Exception as e:
                 raise ImportError("faster-whisper is required for local_whisper mode") from e
@@ -41,6 +26,7 @@ class WhisperAnalyzer:
                 self.openai = openai
             except Exception as e:
                 raise ImportError("openai library is required for openai_whisper mode") from e
+
 
     def _download_audio(self, source_url: str) -> str:
         """Download audio-only with yt-dlp into the download dir. Returns the local file path."""
