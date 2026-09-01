@@ -84,19 +84,20 @@ A continuación la división completa de la semana:
 def test_export_artifact_multi_source_brackets(tmp_path):
     from src.rag.artifacts import export_artifact, _md_to_reportlab_html
 
-    converted = _md_to_reportlab_html("Basado en [Source 1, Source 2, Source 5].")
-    assert 'href="#source_1"' in converted
-    assert 'href="#source_2"' in converted
-    assert 'href="#source_5"' in converted
+    sources_map = {1: "https://instagram.com/p/vid1", 2: "https://instagram.com/p/vid2"}
+    converted = _md_to_reportlab_html("Basado en [Source 1, Source 2].", sources_map=sources_map)
+    assert 'href="https://instagram.com/p/vid1"' in converted
+    assert 'href="https://instagram.com/p/vid2"' in converted
 
     pdf_file = tmp_path / "multi_source.pdf"
     content = "Consejos combinados [Source 1, Source 2]."
     sources = [
-        {"creator": "a", "url": "https://instagram.com/p/a", "cited": True},
-        {"creator": "b", "url": "https://instagram.com/p/b", "cited": True},
+        {"creator": "a", "url": "https://instagram.com/p/vid1", "cited": True, "summary": "Video 1"},
+        {"creator": "b", "url": "https://instagram.com/p/vid2", "cited": True, "summary": "Video 2"},
     ]
     res_pdf = export_artifact(content, str(pdf_file), title="Multi Source", sources=sources)
     assert res_pdf.exists()
+
 
 
 

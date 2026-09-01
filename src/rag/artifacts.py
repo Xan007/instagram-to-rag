@@ -62,25 +62,38 @@ def get_artifact_system_prompt(artifact_type: Optional[str]) -> Optional[str]:
     return ARTIFACT_PROMPTS.get(key)
 
 
-def _replace_sources_in_bracket(match: re.Match) -> str:
+def _replace_sources_in_bracket(match: re.Match, sources_map: Optional[Dict[int, str]] = None) -> str:
     inner = match.group(1)
     numbers = re.findall(r"\d+", inner)
     if not numbers:
         return match.group(0)
-    links = [f'<a href="#source_{n}"><u><b>Source {n}</b></u></a>' for n in numbers]
+    links = []
+    for n_str in numbers:
+        n = int(n_str)
+        target_url = sources_map.get(n) if sources_map else None
+        if target_url:
+            links.append(f'<a href="{target_url}"><u><b>Source {n}</b></u></a>')
+        else:
+            links.append(f'<a href="#source_{n}"><u><b>Source {n}</b></u></a>')
     return f"[{', '.join(links)}]"
 
 
-def _md_to_reportlab_html(text: str) -> str:
+def _md_to_reportlab_html(text: str, sources_map: Optional[Dict[int, str]] = None) -> str:
     escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"__(.+?)__", r"<b>\1</b>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+?)\*(?!\*)", r"<i>\1</i>", escaped)
     escaped = re.sub(r"`(.+?)`", r'<font face="Courier">\1</font>', escaped)
-    # Support both single [Source 1] and grouped [Source 1, Source 2, Source 5] or [Source 1, 2, 5]
-    escaped = re.sub(r"\[(Source\s*\d+[^\]]*)\]", _replace_sources_in_bracket, escaped, flags=re.IGNORECASE)
+    # Support both single [Source 1] and grouped [Source 1, Source 2, Source 5] linking directly to video URL
+    escaped = re.sub(
+        r"\[(Source\s*\d+[^\]]*)\]",
+        lambda m: _replace_sources_in_bracket(m, sources_map=sources_map),
+        escaped,
+        flags=re.IGNORECASE,
+    )
     escaped = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2"><u>\1</u></a>', escaped)
     return escaped
+
 
 
 
@@ -120,7 +133,12 @@ def _parse_table_block(table_lines: List[str]) -> Optional[Tuple[List[str], List
     return header, rows
 
 
-def _render_reportlab_table(header: List[str], rows: List[List[str]], max_width: float = 540.0) -> Any:
+def _render_reportlab_table(
+    header: List[str],
+    rows: List[List[str]],
+    max_width: float = 540.0,
+    sources_map: Optional[Dict[int, str]] = None,
+) -> Any:
     from reportlab.platypus import Table, TableStyle, Paragraph
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib import colors
@@ -162,11 +180,11 @@ def _render_reportlab_table(header: List[str], rows: List[List[str]], max_width:
     )
 
     table_data = []
-    th_row = [Paragraph(_md_to_reportlab_html(h), th_style) for h in header]
+    th_row = [Paragraph(_md_to_reportlab_html(h, sources_map=sources_map), th_style) for h in header]
     table_data.append(th_row)
 
     for r in rows:
-        td_row = [Paragraph(_md_to_reportlab_html(c), td_style) for c in r]
+        td_row = [Paragraph(_md_to_reportlab_html(c, sources_map=sources_map), td_style) for c in r]
         table_data.append(td_row)
 
     t = Table(table_data, colWidths=actual_widths, repeatRows=1)
@@ -194,6 +212,8 @@ def export_artifact(
 ) -> Path:
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
+
+    sources_map = {i: s.get("url", "") for i, s in enumerate(sources or [], start=1)}
 
     if out.suffix.lower() == ".pdf":
         from reportlab.lib.pagesizes import letter
@@ -304,7 +324,7 @@ def export_artifact(
                 parsed_table = _parse_table_block(table_lines)
                 if parsed_table:
                     hdr, data_rows = parsed_table
-                    rendered_tbl = _render_reportlab_table(hdr, data_rows, max_width=532.0)
+                    rendered_tbl = _render_reportlab_table(hdr, data_rows, max_width=532.0, sources_map=sources_map)
                     if rendered_tbl:
                         elements.append(Spacer(1, 4))
                         elements.append(rendered_tbl)
@@ -312,33 +332,34 @@ def export_artifact(
                 continue
 
             if line.startswith("### "):
-                elements.append(Paragraph(_md_to_reportlab_html(line[4:]), h2_style))
+                elements.append(Paragraph(_md_to_reportlab_html(line[4:], sources_map=sources_map), h2_style))
             elif line.startswith("## "):
-                elements.append(Paragraph(_md_to_reportlab_html(line[3:]), h1_style))
+                elements.append(Paragraph(_md_to_reportlab_html(line[3:], sources_map=sources_map), h1_style))
             elif line.startswith("# "):
-                elements.append(Paragraph(_md_to_reportlab_html(line[2:]), h1_style))
+                elements.append(Paragraph(_md_to_reportlab_html(line[2:], sources_map=sources_map), h1_style))
             elif line.startswith(("- [ ]", "- [x]", "- [X]")):
                 is_checked = line.startswith(("- [x]", "- [X]"))
                 icon = "[X]" if is_checked else "[  ]"
                 item_text = line[5:].strip()
-                elements.append(Paragraph(f"<b>{icon}</b> {_md_to_reportlab_html(item_text)}", bullet_style))
+                elements.append(Paragraph(f"<b>{icon}</b> {_md_to_reportlab_html(item_text, sources_map=sources_map)}", bullet_style))
             elif line.startswith(("- ", "* ", "• ")):
                 bullet_text = line[2:].strip()
-                elements.append(Paragraph(f"• {_md_to_reportlab_html(bullet_text)}", bullet_style))
+                elements.append(Paragraph(f"• {_md_to_reportlab_html(bullet_text, sources_map=sources_map)}", bullet_style))
             elif re.match(r"^\d+\.\s+", line):
                 match = re.match(r"^(\d+)\.\s+(.*)", line)
                 num, item_text = match.group(1), match.group(2)
-                elements.append(Paragraph(f"<b>{num}.</b> {_md_to_reportlab_html(item_text)}", bullet_style))
+                elements.append(Paragraph(f"<b>{num}.</b> {_md_to_reportlab_html(item_text, sources_map=sources_map)}", bullet_style))
             elif line.startswith(">"):
                 quote_text = line.lstrip("> ").strip()
-                elements.append(Paragraph(_md_to_reportlab_html(quote_text), quote_style))
+                elements.append(Paragraph(_md_to_reportlab_html(quote_text, sources_map=sources_map), quote_style))
             elif line.startswith("---"):
                 elements.append(Spacer(1, 4))
                 elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.black, spaceBefore=4, spaceAfter=8))
             else:
-                elements.append(Paragraph(_md_to_reportlab_html(line), body_style))
+                elements.append(Paragraph(_md_to_reportlab_html(line, sources_map=sources_map), body_style))
 
             idx += 1
+
 
         if sources:
             elements.append(Spacer(1, 14))
