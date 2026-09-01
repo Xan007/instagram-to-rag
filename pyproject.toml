@@ -16,6 +16,7 @@ dependencies = [
     "pinecone>=9.1.0",
     "python-dotenv>=1.2.3",
     "rank-bm25>=0.2.2",
+    "reportlab>=5.0.1",
     "rich>=14.0.0",
     "sqlalchemy>=2.0",
     "typer>=0.27.1",

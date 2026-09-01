@@ -269,10 +269,12 @@ def query_cmd(
     creator: Optional[str] = typer.Option(None, "--creator", "-c", help="Scope question to a creator"),
     mode: str = typer.Option("grounded_plus", "--mode", help="'grounded_plus' or 'strict'"),
     artifact: Optional[str] = typer.Option(None, "--artifact", "-a", help="'workout_plan', 'recipe_book', or 'grocery_list'"),
+    export: Optional[str] = typer.Option(None, "--export", "-o", help="Export to file (.md or .pdf)"),
     top_k: int = typer.Option(6, "--top-k", help="Top matches"),
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Account username"),
 ):
     from src.pipeline import query_knowledge
+    from src.rag.artifacts import export_artifact
     uid = None
     if group:
         uid = _get_active_user(user)
@@ -294,9 +296,20 @@ def query_cmd(
             for i, s in enumerate(res["sources"], 1):
                 if s.get("cited", True):
                     console.print(f" - [Source {i}] @{s['creator']}: {s['url']}")
+
+        if export:
+            title = artifact.replace("_", " ").title() if artifact else "InstaRAG Query Export"
+            exported_path = export_artifact(
+                content=res["answer"],
+                output_path=export,
+                title=title,
+                sources=res.get("sources"),
+            )
+            console.print(f"\n[bold green]✓ Artifact exported successfully to:[/bold green] [cyan]{exported_path}[/cyan]")
     except Exception as e:
         console.print(f"[bold red]Query failed:[/bold red] {e}")
         raise typer.Exit(1)
+
 
 
 

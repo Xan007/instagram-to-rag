@@ -1,4 +1,6 @@
-﻿from typing import Any, Dict, List, Optional
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 WORKOUT_PLAN_SYSTEM = """Eres un coach de entrenamiento experto, claro y empático.
 Tu tarea es armar un plan de entrenamiento estructurado y práctico basado EXCLUSIVAMENTE en el conocimiento de los posts citados.
@@ -46,3 +48,93 @@ def get_artifact_system_prompt(artifact_type: Optional[str]) -> Optional[str]:
         return None
     key = artifact_type.strip().lower().replace("-", "_").replace(" ", "_")
     return ARTIFACT_PROMPTS.get(key)
+
+
+def export_artifact(
+    content: str,
+    output_path: str,
+    title: str = "InstaRAG Export",
+    sources: Optional[List[Dict[str, Any]]] = None,
+) -> Path:
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    if out.suffix.lower() == ".pdf":
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+        from reportlab.lib import colors
+
+        doc = SimpleDocTemplate(
+            str(out),
+            pagesize=letter,
+            rightMargin=40,
+            leftMargin=40,
+            topMargin=40,
+            bottomMargin=40,
+        )
+        styles = getSampleStyleSheet()
+
+        title_style = ParagraphStyle(
+            "DocTitle",
+            parent=styles["Heading1"],
+            fontSize=18,
+            leading=22,
+            textColor=colors.HexColor("#1A365D"),
+            spaceAfter=12,
+        )
+        heading_style = ParagraphStyle(
+            "Heading2",
+            parent=styles["Heading2"],
+            fontSize=13,
+            leading=16,
+            textColor=colors.HexColor("#2B6CB0"),
+            spaceBefore=10,
+            spaceAfter=6,
+        )
+        body_style = ParagraphStyle(
+            "DocBody",
+            parent=styles["Normal"],
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor("#2D3748"),
+            spaceAfter=6,
+        )
+
+        elements = []
+        elements.append(Paragraph(title, title_style))
+        elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#CBD5E0"), spaceAfter=14))
+
+        for line in content.split("\n"):
+            clean_line = line.strip()
+            if not clean_line:
+                elements.append(Spacer(1, 6))
+                continue
+            if clean_line.startswith("#"):
+                header_text = clean_line.lstrip("#").strip()
+                elements.append(Paragraph(header_text, heading_style))
+            else:
+                formatted_line = clean_line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                elements.append(Paragraph(formatted_line, body_style))
+
+        if sources:
+            elements.append(Spacer(1, 14))
+            elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#CBD5E0"), spaceAfter=10))
+            elements.append(Paragraph("Fuentes Citadas (Reels / Posts)", heading_style))
+            for i, s in enumerate(sources, 1):
+                if s.get("cited", True):
+                    src_line = f"• [Source {i}] @{s.get('creator', '')}: {s.get('url', '')}"
+                    elements.append(Paragraph(src_line, body_style))
+
+        doc.build(elements)
+    else:
+        full_text = f"# {title}\n\n{content}"
+        if sources:
+            full_text += "\n\n---\n### Fuentes Citadas\n"
+            for i, s in enumerate(sources, 1):
+                if s.get("cited", True):
+                    full_text += f"- **[Source {i}]** @{s.get('creator', '')}: {s.get('url', '')}\n"
+        out.write_text(full_text, encoding="utf-8")
+
+    return out.resolve()
+

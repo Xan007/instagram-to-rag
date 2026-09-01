@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from src.rag.hybrid import HybridRetriever, tokenize
 from src.rag.artifacts import get_artifact_system_prompt, ARTIFACT_PROMPTS
 from storage.models import Post
@@ -36,3 +36,21 @@ def test_artifact_prompts():
     assert get_artifact_system_prompt("recipe_book") == ARTIFACT_PROMPTS["recipe_book"]
     assert get_artifact_system_prompt("grocery_list") == ARTIFACT_PROMPTS["grocery_list"]
     assert get_artifact_system_prompt(None) is None
+
+
+def test_export_artifact_md_and_pdf(tmp_path):
+    from src.rag.artifacts import export_artifact
+
+    md_file = tmp_path / "plan.md"
+    pdf_file = tmp_path / "plan.pdf"
+    content = "# Rutina de Empuje\n\n- Press militar: 4x8 [Source 1]\n- Elevaciones laterales: 3x12 [Source 1]"
+    sources = [{"creator": "coach", "url": "https://instagram.com/p/abc", "cited": True}]
+
+    res_md = export_artifact(content, str(md_file), title="Rutina", sources=sources)
+    assert res_md.exists()
+    assert "Press militar" in res_md.read_text(encoding="utf-8")
+
+    res_pdf = export_artifact(content, str(pdf_file), title="Rutina", sources=sources)
+    assert res_pdf.exists()
+    assert res_pdf.stat().st_size > 500
+
