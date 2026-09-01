@@ -215,7 +215,12 @@ Standalone Question:"""
                 )
                 dense_matches = results.get("matches", [])
             except Exception as e:
-                logger.warning("Pinecone query failed (%s); using local BM25 fallback.", e)
+                err_msg = str(e)
+                if "does not match the dimension" in err_msg:
+                    logger.info("Vector dimension (%d) differs from Pinecone index; relying on local BM25 retrieval.", len(query_vector))
+                else:
+                    logger.warning("Pinecone query notice: %s; using local BM25 retrieval.", e)
+
 
 
         hybrid_matches = self.hybrid_retriever.retrieve(
