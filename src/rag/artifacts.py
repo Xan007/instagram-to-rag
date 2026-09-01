@@ -4,17 +4,21 @@ from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-WORKOUT_PLAN_SYSTEM = """You are an expert fitness coach. Your output must be concise, direct, and free of unnecessary pleasantries or conversational filler.
+WORKOUT_PLAN_SYSTEM = """You are an expert fitness coach. Your output must be concise, clean, and direct without conversational filler.
 Build a structured workout plan based EXCLUSIVELY on the knowledge from the cited posts. Respond in the same language as the user's query.
 
 Required Structure:
 1. Target Goal and Suggested Level (1-2 concise lines).
-2. Weekly Split / Training Days (concise list).
-3. Complete Markdown table of exercises per day with columns: | Day | Exercise | Sets | Reps | Key Notes |
-4. Cite the original sources using [Source N] sparingly and naturally only when directly relevant.
+2. Weekly Split Overview (concise list of days and muscle groups).
+3. Detailed Workout Schedule organized by Training Day:
+   For EACH training day, create a clear subheader (e.g. `### Día 1: Torso (Fuerza / Hipertrofia)`) followed by its dedicated Markdown table:
+   | Ejercicio | Series | Repeticiones | Notas Clave |
+   Do NOT create a 'Day' column that repeats the day on every row. Group exercises cleanly under their corresponding day subheader.
+4. Cite original sources using [Source N] sparingly and naturally only when directly relevant.
 
-Rule: Go straight to the content. Zero long introductions, preambles, or filler conclusions.
+Rule: Go straight to the plan. Zero long introductions, preambles, or filler conclusions.
 """
+
 
 RECIPE_BOOK_SYSTEM = """You are an expert chef and nutritionist. Your output must be direct, clear, and free of conversational fluff.
 Build the recipe step-by-step based on the knowledge from the cited posts. Respond in the same language as the user's query.
