@@ -1,4 +1,3 @@
-"""Process user saved posts from IG export and index knowledge."""
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,9 +13,8 @@ from storage.db import get_session
 import storage.repositories as repo
 
 
-def import_user_saved_posts(user_id: str, file_path: Path) -> Dict[str, Any]:
-    """Import saved posts from export into UserSavedPost and Post tables."""
-    if not file_path.exists():
+def import_user_saved_posts(user_id: str = "default", file_path: Path = None) -> Dict[str, Any]:
+    if not file_path or not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
     source = str(file_path)
@@ -35,7 +33,6 @@ def import_user_saved_posts(user_id: str, file_path: Path) -> Dict[str, Any]:
     try:
         for item in items:
             post_id = item["id"]
-            # Ensure placeholder Post exists
             existing_post = repo.get_post(db, post_id)
             if not existing_post:
                 from storage.models import Post
@@ -65,14 +62,13 @@ def import_user_saved_posts(user_id: str, file_path: Path) -> Dict[str, Any]:
 
 
 def process_saved(
-    user_id: str,
+    user_id: str = "default",
     *,
     limit: Optional[int] = None,
     caption_only: bool = False,
     workers: int = 4,
     progress: Progress = echo,
 ) -> Dict[str, Any]:
-    """Process user saved posts: if not already indexed, download & analyze, then index."""
     db = get_session()
     try:
         user_saved_post_ids = repo.get_user_saved_post_ids(db, user_id)
@@ -84,7 +80,6 @@ def process_saved(
     if not saved_posts:
         raise ValueError("No saved posts imported for this user. Run 'saved import' first.")
 
-    # Deduplication: check which posts are already indexed
     pending = [p for p in saved_posts if not p.indexed_at or not p.extracted_knowledge]
     already_indexed = len(saved_posts) - len(pending)
 
@@ -141,7 +136,6 @@ def process_saved(
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(process_item, post): post for post in pending}
         for future in as_completed(futures):
-            post = futures[future]
             status, pid, error = future.result()
             if status == "ok":
                 processed += 1
@@ -159,3 +153,4 @@ def process_saved(
         "skipped": skipped,
         "failed": failed,
     }
+

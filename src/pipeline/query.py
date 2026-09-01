@@ -1,4 +1,3 @@
-"""Query the RAG knowledge base across creators or scoped to a group."""
 from typing import Any, Dict, List, Optional
 from config.groups import get_post_ids_in_group, load_group_by_name, user_can_access_group
 
@@ -14,7 +13,6 @@ def query_knowledge(
     mode: str = "grounded_plus",
     history: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Query the knowledge base; scoped by creator or group agent if provided."""
     from src.rag.query_engine import QueryEngine
 
     post_ids = None
@@ -36,3 +34,4 @@ def query_knowledge(
         mode=mode,
         history=history,
     )
+

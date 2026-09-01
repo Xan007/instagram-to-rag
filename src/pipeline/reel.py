@@ -1,4 +1,3 @@
-"""Add individual reels/posts by URL through the pipeline and optionally add to a group."""
 import os
 import time
 from typing import Any, Dict, List, Optional
@@ -11,7 +10,6 @@ import storage.repositories as repo
 
 
 def _reel_meta_via_ytdlp(url: str) -> Dict[str, Any]:
-    """Fetch reel metadata with yt-dlp."""
     from yt_dlp import YoutubeDL
 
     ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
@@ -19,9 +17,8 @@ def _reel_meta_via_ytdlp(url: str) -> Dict[str, Any]:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as e:
-        raise ValueError(
-            f"Could not fetch reel metadata: {e}"
-        )
+        raise ValueError(f"Could not fetch reel metadata: {e}")
+
     shortcode = info.get("id")
     if not shortcode:
         raise ValueError(f"yt-dlp could not determine the reel id for {url}.")
@@ -38,7 +35,6 @@ def add_reel(
     keep_media: bool = False,
     progress: Progress = echo,
 ) -> Dict[str, Any]:
-    """Add one or more Instagram reel/post URLs through the pipeline (with deduplication)."""
     from src.downloader.media_downloader import MediaDownloader
     from src.analyzer.gemini_analyzer import GeminiAnalyzer
     from src.analyzer.whisper_analyzer import WhisperAnalyzer
@@ -58,7 +54,7 @@ def add_reel(
     apify_meta: Dict[str, Dict[str, Any]] = {}
     try:
         scraper_api = ApifyPostScraper()
-        progress(f"Fetching metadata via Apify...")
+        progress("Fetching metadata via Apify...")
         for post in scraper_api.get_posts_by_urls(urls):
             apify_meta[post["id"]] = post
     except Exception as e:
@@ -72,73 +68,75 @@ def add_reel(
 
     db = get_session()
 
-    for url in urls:
-        reel_id = None
-        downloaded_files: List[Dict[str, str]] = []
-        try:
-            shortcode = shortcode_from_url(url)
-            meta = apify_meta.get(shortcode)
+    try:
+        for url in urls:
+            reel_id = None
+            downloaded_files: List[Dict[str, str]] = []
+            try:
+                shortcode = shortcode_from_url(url)
+                meta = apify_meta.get(shortcode)
 
-            if meta is None:
-                meta = _reel_meta_via_ytdlp(url)
-            else:
-                meta = dict(meta)
-                meta.setdefault("url", url)
+                if meta is None:
+                    meta = _reel_meta_via_ytdlp(url)
+                else:
+                    meta = dict(meta)
+                    meta.setdefault("url", url)
 
-            reel_id = meta["id"]
-            description = meta.get("description", "")
-            creator_username = creator or meta.get("creator_username", "") or ""
+                reel_id = meta["id"]
+                description = meta.get("description", "")
+                creator_username = creator or meta.get("creator_username", "") or ""
 
-            # Check if already indexed in DB/Pinecone
-            existing_post = repo.get_post(db, reel_id)
-            if existing_post and existing_post.extracted_knowledge and existing_post.indexed_at:
-                progress(f"Reel {reel_id} is already indexed in knowledge base.")
+                existing_post = repo.get_post(db, reel_id)
+                if existing_post and existing_post.extracted_knowledge and existing_post.indexed_at:
+                    progress(f"Reel {reel_id} is already indexed in knowledge base.")
+                    if group_id:
+                        repo.add_post_to_group(db, group_id, reel_id)
+                        progress(f"Added existing reel {reel_id} to group.")
+                    added.append({"id": reel_id, "url": url, "already_indexed": True})
+                    continue
+
+                mode = settings.engine
+                is_whisper = mode in ("local_whisper", "openai_whisper")
+                if analyzer is None:
+                    analyzer = WhisperAnalyzer(mode=mode) if is_whisper else GeminiAnalyzer()
+                    indexer = PineconeIndexer()
+
+                try:
+                    if not caption_only and meta.get("media_items"):
+                        downloaded_files = downloader.download_media_items(meta["media_items"], reel_id) or []
+                    if not downloaded_files and not caption_only:
+                        downloaded_files = download_with_ytdlp(meta["url"], reel_id, prefix="reel") or []
+                except Exception as e:
+                    progress(f"Media download failed: {e} - using caption.")
+
+                progress(f"Analyzing content for {reel_id}...")
+                if downloaded_files:
+                    extracted_text = analyzer.extract_knowledge(downloaded_files, description)
+                else:
+                    extracted_text = analyzer.extract_knowledge([], description) if description else ""
+
+                indexer.index_post(
+                    post_id=reel_id,
+                    url=url,
+                    creator_username=creator_username,
+                    post_type=meta.get("type", "Reel"),
+                    description=description,
+                    extracted_text=extracted_text,
+                )
+
                 if group_id:
                     repo.add_post_to_group(db, group_id, reel_id)
-                    progress(f"Added existing reel {reel_id} to group.")
-                added.append({"id": reel_id, "url": url, "already_indexed": True})
-                continue
+                    progress(f"Added reel {reel_id} to group.")
 
-            mode = settings.engine
-            is_whisper = mode in ("local_whisper", "openai_whisper")
-            if analyzer is None:
-                analyzer = WhisperAnalyzer(mode=mode) if is_whisper else GeminiAnalyzer()
-                indexer = PineconeIndexer()
-
-            try:
-                if not caption_only and meta.get("media_items"):
-                    downloaded_files = downloader.download_media_items(meta["media_items"], reel_id) or []
-                if not downloaded_files and not caption_only:
-                    downloaded_files = download_with_ytdlp(meta["url"], reel_id, prefix="reel") or []
+                added.append({"id": reel_id, "url": url, "already_indexed": False})
             except Exception as e:
-                progress(f"Media download failed: {e} - using caption.")
+                failed.append({"url": url, "error": str(e)})
+                progress(f"Failed {url}: {e}")
+            finally:
+                if downloaded_files and not keep_media:
+                    downloader.cleanup_items(downloaded_files)
+    finally:
+        db.close()
 
-            progress(f"Analyzing content for {reel_id}...")
-            if downloaded_files:
-                extracted_text = analyzer.extract_knowledge(downloaded_files, description)
-            else:
-                extracted_text = analyzer.extract_knowledge([], description) if description else ""
-
-            indexer.index_post(
-                post_id=reel_id,
-                url=url,
-                creator_username=creator_username,
-                post_type=meta.get("type", "Reel"),
-                description=description,
-                extracted_text=extracted_text,
-            )
-
-            if group_id:
-                repo.add_post_to_group(db, group_id, reel_id)
-                progress(f"Added reel {reel_id} to group.")
-
-            added.append({"id": reel_id, "url": url, "already_indexed": False})
-        except Exception as e:
-            failed.append({"url": url, "error": str(e)})
-            progress(f"Failed {url}: {e}")
-        finally:
-            if downloaded_files and not keep_media:
-                downloader.cleanup_items(downloaded_files)
-
-    db.close()
     return {"added": added, "failed": failed}
+

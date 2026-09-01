@@ -1,4 +1,3 @@
-"""Group pipeline operations: creating agents, adding posts, filtering from profile, sharing."""
 from typing import Any, Dict, List, Optional
 from config.groups import (
     GroupInfo,
@@ -25,7 +24,6 @@ def populate_group_from_profile(
     interests: Optional[str] = None,
     progress: Progress = echo,
 ) -> Dict[str, Any]:
-    """Add posts from an indexed IG profile to a user's group, optionally filtered by interests."""
     group = load_group_by_name(user_id, group_name)
     if not group:
         raise ValueError(f"Group '{group_name}' not found for user.")
@@ -75,3 +73,4 @@ def populate_group_from_profile(
         "matched": len(matching_ids),
         "total_candidates": len(candidates),
     }
+

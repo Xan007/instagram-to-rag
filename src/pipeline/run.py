@@ -1,8 +1,3 @@
-"""Global profile pipeline: scrape ALL posts → extract knowledge → index.
-
-No interest filtering here. Interests apply at the Group level.
-Deduplication: posts already in the `posts` table are skipped.
-"""
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -25,11 +20,6 @@ def scrape_profile(
     keep_media: bool = False,
     progress: Progress = echo,
 ) -> Dict[str, Any]:
-    """Scrape a global IG profile and index ALL posts (no interest filter).
-
-    Posts already in the local DB are skipped (deduplication by post ID).
-    Returns: processed, skipped_known, failed, total_indexed, last_scraped_at.
-    """
     from src.scraper.apify_scraper import ApifyScraper
     from src.downloader.media_downloader import MediaDownloader
     from src.analyzer.gemini_analyzer import GeminiAnalyzer
@@ -40,12 +30,11 @@ def scrape_profile(
     run_start = time.time()
     run_iso = _now_iso()
 
-    # Ensure profile exists in DB
     profile = load_ig_profile(username)
     if not profile:
         profile = IGProfileInfo(username=username)
 
-    progress(f"[bold]Scraping @{username}[/bold] — {run_iso[:19]}Z")
+    progress(f"Scraping @{username} — {run_iso[:19]}Z")
     progress(
         f"  Mode: {analysis_mode} | Max posts: {max_posts}"
         + (f" | newer than: {newer_than}" if newer_than else "")
@@ -54,7 +43,6 @@ def scrape_profile(
         dt = datetime.fromtimestamp(profile.last_scraped_at, tz=timezone.utc)
         progress(f"  Last scraped: {dt.isoformat()[:19]}Z")
 
-    # Fetch all already-indexed post IDs to skip them
     db = get_session()
     try:
         known_ids = set(repo.get_all_post_ids(db, creator_username=username))
@@ -63,11 +51,9 @@ def scrape_profile(
 
     progress(f"  Already indexed: {len(known_ids)} post(s) — will skip these.")
 
-    # Update last_run_at immediately
     profile.last_run_at = run_iso
     save_ig_profile(profile)
 
-    # Components
     try:
         scraper = ApifyScraper(only_posts_newer_than=newer_than)
         downloader = MediaDownloader()
@@ -85,7 +71,7 @@ def scrape_profile(
     failed_ids: List[str] = []
 
     try:
-        progress("Fetching post metadata from Apify…")
+        progress("Fetching post metadata from Apify...")
         all_posts: List[Dict[str, Any]] = list(
             scraper.get_posts_metadata(username, max_posts, list(known_ids))
         )
@@ -146,7 +132,7 @@ def scrape_profile(
                 if downloaded and not keep_media:
                     downloader.cleanup_items(downloaded)
 
-        progress(f"Processing {len(all_posts)} post(s) concurrently (download + analyze + index)...")
+        progress(f"Processing {len(all_posts)} post(s) concurrently...")
         with ThreadPoolExecutor(max_workers=3) as executor:
             futures = {executor.submit(process_post_task, p): p for p in all_posts}
             for future in as_completed(futures):
@@ -167,7 +153,6 @@ def scrape_profile(
             "error": str(e),
         }
 
-    # Update profile stats
     elapsed = time.time() - run_start
     profile.last_scraped_at = run_start
     db = get_session()
@@ -186,3 +171,7 @@ def scrape_profile(
         "total_indexed": len(known_ids) + len(new_post_ids),
         "last_scraped_at": run_start,
     }
+
+
+run_profile = scrape_profile
+

@@ -1,10 +1,9 @@
 import logging
 import os
 import re
-import warnings
 from typing import Any, Dict, List, Optional, Tuple
-from pinecone import Pinecone
 from google import genai
+from pinecone import Pinecone
 from config.env import load_runtime_env
 from src.llm.factory import LLMClientFactory
 from src.rag.conversation import (
@@ -12,7 +11,6 @@ from src.rag.conversation import (
     normalize_history,
 )
 
-warnings.filterwarnings("ignore")
 load_runtime_env()
 
 logger = logging.getLogger(__name__)
@@ -27,6 +25,7 @@ DEFAULT_MIN_SCORE = 0.35
 MAX_CAPTION_CHARS = 600
 
 MODES = ("strict", "grounded_plus")
+
 
 _LOW_CONFIDENCE_ANSWER = (
     "No encontré contenido suficientemente relacionado con tu pregunta en la base de "
