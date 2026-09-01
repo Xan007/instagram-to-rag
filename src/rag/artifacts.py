@@ -1,4 +1,4 @@
-﻿import datetime
+import datetime
 import os
 from pathlib import Path
 import re
@@ -57,9 +57,10 @@ def _md_to_reportlab_html(text: str) -> str:
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"__(.+?)__", r"<b>\1</b>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+?)\*(?!\*)", r"<i>\1</i>", escaped)
-    escaped = re.sub(r"`(.+?)`", r'<font face="Courier" color="#4A5568">\1</font>', escaped)
-    escaped = re.sub(r"\[Source\s+(\d+)\]", r'<font color="#4C51BF"><b>[Source \1]</b></font>', escaped)
-    escaped = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2" color="#3182CE"><u>\1</u></a>', escaped)
+    escaped = re.sub(r"`(.+?)`", r'<font face="Courier">\1</font>', escaped)
+    # Convert [Source N] to clickable internal anchor jump to the bottom
+    escaped = re.sub(r"\[Source\s+(\d+)\]", r'<a href="#source_\1"><u><b>[Source \1]</b></u></a>', escaped)
+    escaped = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2"><u>\1</u></a>', escaped)
     return escaped
 
 
@@ -108,7 +109,6 @@ def _render_reportlab_table(header: List[str], rows: List[List[str]], max_width:
     if col_count == 0:
         return None
 
-    # Determine column widths based on content lengths
     col_max_lengths = [len(h) for h in header]
     for r in rows:
         for c_idx, cell in enumerate(r):
@@ -126,17 +126,17 @@ def _render_reportlab_table(header: List[str], rows: List[List[str]], max_width:
 
     th_style = ParagraphStyle(
         "THStyle",
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.white,
+        fontSize=9,
+        leading=12,
+        textColor=colors.black,
         fontName="Helvetica-Bold",
         alignment=0,
     )
     td_style = ParagraphStyle(
         "TDStyle",
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor("#2D3748"),
+        fontSize=9,
+        leading=12,
+        textColor=colors.black,
         fontName="Helvetica",
         alignment=0,
     )
@@ -152,22 +152,15 @@ def _render_reportlab_table(header: List[str], rows: List[List[str]], max_width:
     t = Table(table_data, colWidths=actual_widths, repeatRows=1)
 
     t_style = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E1E2F")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEEEEE")),
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
     ]
-
-    for row_idx in range(1, len(table_data)):
-        if row_idx % 2 == 0:
-            t_style.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#F8FAFC")))
-        else:
-            t_style.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.white))
 
     t.setStyle(TableStyle(t_style))
     return t
@@ -195,83 +188,83 @@ def export_artifact(
         )
         from reportlab.lib import colors
 
-        PRIMARY = colors.HexColor("#1E1E2F")
-        ACCENT = colors.HexColor("#6366F1")
-        TEXT_DARK = colors.HexColor("#2D3748")
-        BORDER_LIGHT = colors.HexColor("#E2E8F0")
-
         doc = SimpleDocTemplate(
             str(out),
             pagesize=letter,
-            rightMargin=36,
-            leftMargin=36,
-            topMargin=36,
-            bottomMargin=36,
+            rightMargin=40,
+            leftMargin=40,
+            topMargin=40,
+            bottomMargin=40,
         )
 
         styles = getSampleStyleSheet()
 
-        h1_style = ParagraphStyle(
-            "CustomH1",
+        doc_title_style = ParagraphStyle(
+            "CleanDocTitle",
             parent=styles["Heading1"],
-            fontSize=15,
-            leading=19,
-            textColor=PRIMARY,
-            spaceBefore=14,
+            fontSize=18,
+            leading=22,
+            textColor=colors.black,
+            fontName="Helvetica-Bold",
+            spaceAfter=8,
+        )
+        h1_style = ParagraphStyle(
+            "CleanH1",
+            parent=styles["Heading1"],
+            fontSize=14,
+            leading=18,
+            textColor=colors.black,
+            fontName="Helvetica-Bold",
+            spaceBefore=12,
             spaceAfter=6,
             keepWithNext=True,
         )
         h2_style = ParagraphStyle(
-            "CustomH2",
+            "CleanH2",
             parent=styles["Heading2"],
-            fontSize=12,
+            fontSize=11.5,
             leading=15,
-            textColor=ACCENT,
+            textColor=colors.black,
+            fontName="Helvetica-Bold",
             spaceBefore=10,
             spaceAfter=4,
             keepWithNext=True,
         )
         body_style = ParagraphStyle(
-            "CustomBody",
+            "CleanBody",
             parent=styles["Normal"],
-            fontSize=9.5,
+            fontSize=10,
             leading=14,
-            textColor=TEXT_DARK,
+            textColor=colors.black,
+            fontName="Helvetica",
             spaceAfter=4,
         )
         bullet_style = ParagraphStyle(
-            "CustomBullet",
+            "CleanBullet",
             parent=styles["Normal"],
-            fontSize=9.5,
+            fontSize=10,
             leading=14,
-            textColor=TEXT_DARK,
+            textColor=colors.black,
+            fontName="Helvetica",
             leftIndent=14,
             spaceAfter=3,
         )
-        callout_style = ParagraphStyle(
-            "CalloutText",
+        quote_style = ParagraphStyle(
+            "CleanQuote",
             parent=styles["Normal"],
-            fontSize=9,
-            leading=13,
-            textColor=colors.HexColor("#2C5282"),
+            fontSize=9.5,
+            leading=13.5,
+            textColor=colors.black,
+            fontName="Helvetica-Oblique",
+            leftIndent=16,
+            spaceBefore=4,
+            spaceAfter=6,
         )
 
         elements = []
 
-        now_str = datetime.datetime.now().strftime("%d/%m/%Y • %H:%M")
-        badge_html = f'<font size="8" color="#6366F1"><b>INSTARAG INTELLIGENCE</b></font><br/><font size="16" color="#1E1E2F"><b>{title}</b></font>'
-        meta_html = f'<font size="8" color="#718096">Generado el {now_str}<br/>Documento Oficial InstaRAG</font>'
-
-        header_table = Table(
-            [[Paragraph(badge_html, body_style), Paragraph(meta_html, ParagraphStyle("RightMeta", parent=body_style, alignment=2))]],
-            colWidths=[360, 180],
-        )
-        header_table.setStyle(TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ]))
-        elements.append(header_table)
-        elements.append(HRFlowable(width="100%", thickness=2, color=ACCENT, spaceBefore=4, spaceAfter=14))
+        elements.append(Paragraph(f"<b>{title}</b>", doc_title_style))
+        elements.append(HRFlowable(width="100%", thickness=1, color=colors.black, spaceBefore=2, spaceAfter=12))
 
         raw_lines = content.split("\n")
         idx = 0
@@ -282,7 +275,6 @@ def export_artifact(
                 idx += 1
                 continue
 
-            # Detect Markdown Table Block
             if _is_table_row(line):
                 table_lines = []
                 while idx < len(raw_lines) and _is_table_row(raw_lines[idx]):
@@ -292,7 +284,7 @@ def export_artifact(
                 parsed_table = _parse_table_block(table_lines)
                 if parsed_table:
                     hdr, data_rows = parsed_table
-                    rendered_tbl = _render_reportlab_table(hdr, data_rows)
+                    rendered_tbl = _render_reportlab_table(hdr, data_rows, max_width=532.0)
                     if rendered_tbl:
                         elements.append(Spacer(1, 4))
                         elements.append(rendered_tbl)
@@ -309,62 +301,37 @@ def export_artifact(
                 is_checked = line.startswith(("- [x]", "- [X]"))
                 icon = "[X]" if is_checked else "[  ]"
                 item_text = line[5:].strip()
-                elements.append(Paragraph(f'<font color="#6366F1"><b>{icon}</b></font> {_md_to_reportlab_html(item_text)}', bullet_style))
+                elements.append(Paragraph(f"<b>{icon}</b> {_md_to_reportlab_html(item_text)}", bullet_style))
             elif line.startswith(("- ", "* ", "• ")):
                 bullet_text = line[2:].strip()
-                elements.append(Paragraph(f'<font color="#6366F1">•</font> {_md_to_reportlab_html(bullet_text)}', bullet_style))
+                elements.append(Paragraph(f"• {_md_to_reportlab_html(bullet_text)}", bullet_style))
             elif re.match(r"^\d+\.\s+", line):
                 match = re.match(r"^(\d+)\.\s+(.*)", line)
                 num, item_text = match.group(1), match.group(2)
-                elements.append(Paragraph(f'<font color="#6366F1"><b>{num}.</b></font> {_md_to_reportlab_html(item_text)}', bullet_style))
+                elements.append(Paragraph(f"<b>{num}.</b> {_md_to_reportlab_html(item_text)}", bullet_style))
             elif line.startswith(">"):
                 quote_text = line.lstrip("> ").strip()
-                callout_table = Table([[Paragraph(_md_to_reportlab_html(quote_text), callout_style)]], colWidths=[540])
-                callout_table.setStyle(TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EBF8FF")),
-                    ("LINELEFT", (0, 0), (0, 0), 3, ACCENT),
-                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ]))
-                elements.append(callout_table)
-                elements.append(Spacer(1, 4))
+                elements.append(Paragraph(_md_to_reportlab_html(quote_text), quote_style))
             elif line.startswith("---"):
                 elements.append(Spacer(1, 4))
-                elements.append(HRFlowable(width="100%", thickness=0.8, color=BORDER_LIGHT, spaceBefore=4, spaceAfter=8))
+                elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.black, spaceBefore=4, spaceAfter=8))
             else:
                 elements.append(Paragraph(_md_to_reportlab_html(line), body_style))
 
             idx += 1
 
         if sources:
-            elements.append(Spacer(1, 12))
-            elements.append(HRFlowable(width="100%", thickness=1, color=ACCENT, spaceBefore=6, spaceAfter=8))
-            elements.append(Paragraph("📌 Fuentes Citadas (Reels / Posts de Creadores)", h2_style))
+            elements.append(Spacer(1, 14))
+            elements.append(HRFlowable(width="100%", thickness=1, color=colors.black, spaceBefore=6, spaceAfter=8))
+            elements.append(Paragraph("<b>Fuentes Citadas (Reels / Posts)</b>", h1_style))
 
-            source_rows = []
             for i, s in enumerate(sources, 1):
                 if s.get("cited", True):
                     creator = s.get("creator", "creador")
                     url = s.get("url", "")
-                    src_p = Paragraph(
-                        f'<b>[Source {i}]</b> <font color="#4C51BF">@{creator}</font>: <a href="{url}" color="#3182CE"><u>{url}</u></a>',
-                        body_style,
-                    )
-                    source_rows.append([src_p])
+                    src_line = f'<a name="source_{i}"/><b>[Source {i}]</b> @{creator}: <a href="{url}"><u>{url}</u></a>'
+                    elements.append(Paragraph(src_line, body_style))
 
-            if source_rows:
-                sources_table = Table(source_rows, colWidths=[540])
-                sources_table.setStyle(TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F7FAFC")),
-                    ("BOX", (0, 0), (-1, -1), 0.5, BORDER_LIGHT),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ]))
-                elements.append(sources_table)
 
         doc.build(elements)
     else:
