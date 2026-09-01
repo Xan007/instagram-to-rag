@@ -2,7 +2,7 @@ from dataclasses import asdict, dataclass
 from typing import get_type_hints
 
 VALID_ENGINES = {"gemini", "local_whisper"}
-VALID_EMBED_PROVIDERS = {"gemini", "local"}
+VALID_EMBED_PROVIDERS = {"auto", "gemini", "jina", "fastembed", "local"}
 VALID_ANALYSIS_MODES = {"gemini", "local_whisper", "openai_whisper"}
 
 SETTINGS_KEY = "app_settings"
@@ -12,7 +12,8 @@ SETTINGS_KEY = "app_settings"
 class AppSettings:
     audio_only: bool = False
     engine: str = "gemini"
-    embed_provider: str = "gemini"
+    embed_provider: str = "auto"
+
 
     @classmethod
     def from_dict(cls, data: dict):

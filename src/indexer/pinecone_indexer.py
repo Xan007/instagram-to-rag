@@ -18,17 +18,15 @@ MAX_CAPTION_CHARS = 1000
 MAX_KNOWLEDGE_CHARS = 8000
 
 
-class PineconeIndexer:
-    def __init__(self, gemini_api_key: Optional[str] = None, pinecone_api_key: Optional[str] = None):
-        api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set.")
-        self.genai_client = genai.Client(api_key=api_key)
+from src.embeddings.factory import EmbeddingFactory
 
+class PineconeIndexer:
+    def __init__(self, pinecone_api_key: Optional[str] = None):
         p_key = pinecone_api_key or os.getenv("PINECONE_API_KEY")
         if not p_key:
             raise ValueError("PINECONE_API_KEY environment variable is not set.")
         self.pc = Pinecone(api_key=p_key)
+        self.embed_provider = EmbeddingFactory.get_provider()
 
         self._ensure_index_exists()
         self.index = self.pc.Index(INDEX_NAME)
@@ -36,10 +34,11 @@ class PineconeIndexer:
     def _ensure_index_exists(self) -> None:
         existing = [i.name for i in self.pc.list_indexes()]
         if INDEX_NAME not in existing:
-            logger.info("Creating Pinecone index '%s' (dim=%d)...", INDEX_NAME, EMBEDDING_DIM)
+            dim = self.embed_provider.dimension
+            logger.info("Creating Pinecone index '%s' (dim=%d)...", INDEX_NAME, dim)
             self.pc.create_index(
                 name=INDEX_NAME,
-                dimension=EMBEDDING_DIM,
+                dimension=dim,
                 metric="cosine",
                 spec=ServerlessSpec(cloud="aws", region="us-east-1"),
             )
@@ -47,22 +46,9 @@ class PineconeIndexer:
                 logger.info("Waiting for index to be ready...")
                 time.sleep(2)
 
-    def _get_embedding(self, text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> List[float]:
-        for attempt in range(3):
-            try:
-                res = self.genai_client.models.embed_content(
-                    model=EMBEDDING_MODEL,
-                    contents=text,
-                    config=genai.types.EmbedContentConfig(task_type=task_type),
-                )
-                return res.embeddings[0].values
-            except Exception as e:
-                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                    logger.info("Embedding rate limit; retrying in 15s (%d/3)...", attempt + 1)
-                    time.sleep(15)
-                else:
-                    raise
-        raise RuntimeError("Failed to generate embedding after 3 attempts.")
+    def _get_embedding(self, text: str, task_type: str = "document") -> List[float]:
+        return self.embed_provider.get_embedding(text, task_type=task_type)
+
 
     def index_post(
         self,
