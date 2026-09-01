@@ -79,13 +79,26 @@ class QueryEngine:
         self.rag_model = os.getenv("RAG_MODEL")
         self.hybrid_retriever = HybridRetriever()
 
-    def _get_embedding(self, text: str) -> list:
-        res = self.genai_client.models.embed_content(
-            model=EMBEDDING_MODEL,
-            contents=text,
-            config=genai.types.EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
-        )
-        return res.embeddings[0].values
+    def _get_embedding(self, text: str) -> Optional[List[float]]:
+        import time
+        for attempt in range(4):
+            try:
+                res = self.genai_client.models.embed_content(
+                    model=EMBEDDING_MODEL,
+                    contents=text,
+                    config=genai.types.EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
+                )
+                return res.embeddings[0].values
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "Quota" in err_str:
+                    wait_time = (attempt + 1) * 3
+                    logger.warning("Gemini embedding rate limit; retrying in %ds (attempt %d/4)...", wait_time, attempt + 1)
+                    time.sleep(wait_time)
+                else:
+                    logger.warning("Embedding generation error: %s", e)
+                    break
+        return None
 
     @staticmethod
     def build_context(matches: List[Dict[str, Any]], min_score: float) -> tuple:
@@ -145,7 +158,6 @@ class QueryEngine:
 User Question:
 {question}"""
 
-
     @staticmethod
     def annotate_citations(answer: str, sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         cited = set(_CITATION_RE.findall(answer))
@@ -192,7 +204,6 @@ Standalone Question:"""
 
         pairs = normalize_history(history)
         search_query = self._condense_question(question, pairs)
-        query_vector = self._get_embedding(search_query)
 
         filter_dict: Optional[Dict[str, Any]] = None
         if post_ids is not None:
@@ -206,15 +217,21 @@ Standalone Question:"""
         elif creator:
             filter_dict = {"creator_username": {"$eq": creator}}
 
-        raw_k = max(top_k * 2, 10)
-        results = self.index.query(
-            vector=query_vector,
-            top_k=raw_k,
-            include_metadata=True,
-            filter=filter_dict,
-        )
+        query_vector = self._get_embedding(search_query)
+        dense_matches = []
+        if query_vector is not None:
+            try:
+                raw_k = max(top_k * 2, 10)
+                results = self.index.query(
+                    vector=query_vector,
+                    top_k=raw_k,
+                    include_metadata=True,
+                    filter=filter_dict,
+                )
+                dense_matches = results.get("matches", [])
+            except Exception as e:
+                logger.warning("Pinecone query failed (%s); using local BM25 fallback.", e)
 
-        dense_matches = results.get("matches", [])
 
         hybrid_matches = self.hybrid_retriever.retrieve(
             query=search_query,
