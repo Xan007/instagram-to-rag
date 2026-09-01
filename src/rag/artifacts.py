@@ -10,8 +10,8 @@ Tu tarea es armar un plan de entrenamiento estructurado y práctico basado EXCLU
 Estructura requerida:
 1. Objetivo y Nivel sugerido.
 2. División Semanal / Días de entrenamiento.
-3. Tabla Markdown completa de ejercicios por día con columnas: | Día | Ejercicio | Series | Repeticiones | Notas Clave & Cita |
-4. Cita a las fuentes originales usando [Source N] en cada ejercicio relevante.
+3. Tabla Markdown completa de ejercicios por día con columnas: | Día | Ejercicio | Series | Repeticiones | Notas Clave |
+4. Cita las fuentes originales usando [Source N] de forma sobria y moderada solo cuando sea relevante. NO abuses de las citas ni las repitas en cada fila o palabra.
 """
 
 RECIPE_BOOK_SYSTEM = """Eres un chef y nutricionista experto y cercano.
@@ -22,7 +22,7 @@ Estructura requerida:
 2. Tabla Markdown de ingredientes con columnas: | Ingrediente | Cantidad | Notas / Sustituto |
 3. Preparación paso a paso de forma clara y amena.
 4. Tips nutricionales o de conservación.
-5. Cita a las fuentes originales usando [Source N].
+5. Cita las fuentes originales usando [Source N] de forma sobria y puntual.
 """
 
 GROCERY_LIST_SYSTEM = """Eres un asistente de compras de supermercado práctico y organizado.
@@ -52,16 +52,26 @@ def get_artifact_system_prompt(artifact_type: Optional[str]) -> Optional[str]:
     return ARTIFACT_PROMPTS.get(key)
 
 
+def _replace_sources_in_bracket(match: re.Match) -> str:
+    inner = match.group(1)
+    numbers = re.findall(r"\d+", inner)
+    if not numbers:
+        return match.group(0)
+    links = [f'<a href="#source_{n}"><u><b>Source {n}</b></u></a>' for n in numbers]
+    return f"[{', '.join(links)}]"
+
+
 def _md_to_reportlab_html(text: str) -> str:
     escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"__(.+?)__", r"<b>\1</b>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+?)\*(?!\*)", r"<i>\1</i>", escaped)
     escaped = re.sub(r"`(.+?)`", r'<font face="Courier">\1</font>', escaped)
-    # Convert [Source N] to clickable internal anchor jump to the bottom
-    escaped = re.sub(r"\[Source\s+(\d+)\]", r'<a href="#source_\1"><u><b>[Source \1]</b></u></a>', escaped)
+    # Support both single [Source 1] and grouped [Source 1, Source 2, Source 5] or [Source 1, 2, 5]
+    escaped = re.sub(r"\[(Source\s*\d+[^\]]*)\]", _replace_sources_in_bracket, escaped, flags=re.IGNORECASE)
     escaped = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2"><u>\1</u></a>', escaped)
     return escaped
+
 
 
 def _is_table_row(line: str) -> bool:

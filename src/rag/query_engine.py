@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 INDEX_NAME = "instarag"
 EMBEDDING_MODEL = "gemini-embedding-001"
 
-_CITATION_RE = re.compile(r"\[Source (\d+)\]")
+_CITATION_RE = re.compile(r"Source\s*(\d+)", re.IGNORECASE)
 
 DEFAULT_TOP_K = 6
 DEFAULT_MIN_SCORE = 0.25
@@ -40,11 +40,12 @@ Your knowledge comes from the Instagram posts and reels provided in the context.
 Conversation Guidelines:
 1. Answer accurately, clearly, and concisely in the same language as the user's question.
 2. Avoid robotic phrasing: do not say "Based on the provided documents" or "In the context given".
-3. Cite your sources with [Source N] right after each key fact, tip, or exercise.
+3. Cite your sources with [Source N] sparingly and naturally only when giving specific recommendations or data from creators. Do not spam or overuse citations on every single line.
 4. NEVER invent, paste, or repeat URLs or posts that are not in the context.
 5. Balanced proactivity: If the user asks a purely factual question, answer directly and concisely. If they ask for advice, planning, or routines, naturally offer 1 or 2 helpful follow-up suggestions or next steps without being pushy."""
 
 _STRICT_RULES = _NATURAL_ASSISTANT_PROMPT + """
+
 
 Strict Instructions:
 - Answer the user's question using ONLY the provided context.

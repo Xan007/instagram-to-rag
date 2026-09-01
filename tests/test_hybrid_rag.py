@@ -81,3 +81,22 @@ A continuación la división completa de la semana:
     assert res_pdf.stat().st_size > 1500
 
 
+def test_export_artifact_multi_source_brackets(tmp_path):
+    from src.rag.artifacts import export_artifact, _md_to_reportlab_html
+
+    converted = _md_to_reportlab_html("Basado en [Source 1, Source 2, Source 5].")
+    assert 'href="#source_1"' in converted
+    assert 'href="#source_2"' in converted
+    assert 'href="#source_5"' in converted
+
+    pdf_file = tmp_path / "multi_source.pdf"
+    content = "Consejos combinados [Source 1, Source 2]."
+    sources = [
+        {"creator": "a", "url": "https://instagram.com/p/a", "cited": True},
+        {"creator": "b", "url": "https://instagram.com/p/b", "cited": True},
+    ]
+    res_pdf = export_artifact(content, str(pdf_file), title="Multi Source", sources=sources)
+    assert res_pdf.exists()
+
+
+
