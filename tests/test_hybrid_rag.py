@@ -54,3 +54,30 @@ def test_export_artifact_md_and_pdf(tmp_path):
     assert res_pdf.exists()
     assert res_pdf.stat().st_size > 500
 
+
+def test_export_artifact_table_pdf(tmp_path):
+    from src.rag.artifacts import export_artifact
+
+    pdf_file = tmp_path / "workout_table.pdf"
+    table_content = """# Plan Semanal de Entrenamiento
+
+A continuación la división completa de la semana:
+
+| Día | Ejercicio | Series | Repeticiones | Notas |
+|---|---|---|---|---|
+| Lunes | Press Militar | 4 | 8-10 | Codos a 45° [Source 1] |
+| Miércoles | Peso Muerto Rumano | 3 | 10-12 | Espalda recta [Source 2] |
+| Viernes | Dominadas Pronas | 4 | Al fallo | Rango completo [Source 1] |
+
+> Recuerda calentar 5 minutos antes de comenzar cada sesión.
+"""
+    sources = [
+        {"creator": "fitness_pro", "url": "https://instagram.com/p/123", "cited": True},
+        {"creator": "nutrition_coach", "url": "https://instagram.com/p/456", "cited": True},
+    ]
+
+    res_pdf = export_artifact(table_content, str(pdf_file), title="Rutina Premium con Tabla", sources=sources)
+    assert res_pdf.exists()
+    assert res_pdf.stat().st_size > 1500
+
+

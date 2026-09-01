@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 WORKOUT_PLAN_SYSTEM = """Eres un coach de entrenamiento experto, claro y empático.
 Tu tarea es armar un plan de entrenamiento estructurado y práctico basado EXCLUSIVAMENTE en el conocimiento de los posts citados.
@@ -10,7 +10,7 @@ Tu tarea es armar un plan de entrenamiento estructurado y práctico basado EXCLU
 Estructura requerida:
 1. Objetivo y Nivel sugerido.
 2. División Semanal / Días de entrenamiento.
-3. Tabla o lista de ejercicios por día con series, repeticiones recomendadas y notas técnicas clave.
+3. Tabla Markdown completa de ejercicios por día con columnas: | Día | Ejercicio | Series | Repeticiones | Notas Clave & Cita |
 4. Cita a las fuentes originales usando [Source N] en cada ejercicio relevante.
 """
 
@@ -19,7 +19,7 @@ Tu tarea es armar una receta o recetario paso a paso basado en el conocimiento d
 
 Estructura requerida:
 1. Nombre del plato y tiempo estimado.
-2. Ingredientes con cantidades aproximadas.
+2. Tabla Markdown de ingredientes con columnas: | Ingrediente | Cantidad | Notas / Sustituto |
 3. Preparación paso a paso de forma clara y amena.
 4. Tips nutricionales o de conservación.
 5. Cita a las fuentes originales usando [Source N].
@@ -63,6 +63,116 @@ def _md_to_reportlab_html(text: str) -> str:
     return escaped
 
 
+def _is_table_row(line: str) -> bool:
+    s = line.strip()
+    return s.startswith("|") and s.endswith("|") and s.count("|") >= 2
+
+
+def _is_table_separator(line: str) -> bool:
+    s = line.strip().replace(" ", "")
+    return s.startswith("|") and re.match(r"^\|(\:?\-{2,}\:?\|)+$", s) is not None
+
+
+def _parse_table_block(table_lines: List[str]) -> Optional[Tuple[List[str], List[List[str]]]]:
+    clean_lines = [l.strip() for l in table_lines if l.strip()]
+    if not clean_lines:
+        return None
+
+    header = []
+    rows = []
+
+    for i, line in enumerate(clean_lines):
+        if _is_table_separator(line):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if not header:
+            header = cells
+        else:
+            if len(cells) < len(header):
+                cells += [""] * (len(header) - len(cells))
+            elif len(cells) > len(header):
+                cells = cells[:len(header)]
+            rows.append(cells)
+
+    if not header:
+        return None
+    return header, rows
+
+
+def _render_reportlab_table(header: List[str], rows: List[List[str]], max_width: float = 540.0) -> Any:
+    from reportlab.platypus import Table, TableStyle, Paragraph
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib import colors
+
+    col_count = len(header)
+    if col_count == 0:
+        return None
+
+    # Determine column widths based on content lengths
+    col_max_lengths = [len(h) for h in header]
+    for r in rows:
+        for c_idx, cell in enumerate(r):
+            if c_idx < col_count:
+                col_max_lengths[c_idx] = max(col_max_lengths[c_idx], len(cell))
+
+    total_len = max(sum(col_max_lengths), 1)
+    col_widths = []
+    for l in col_max_lengths:
+        fraction = max(l / total_len, 0.12)
+        col_widths.append(fraction)
+
+    norm_sum = sum(col_widths)
+    actual_widths = [(w / norm_sum) * max_width for w in col_widths]
+
+    th_style = ParagraphStyle(
+        "THStyle",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.white,
+        fontName="Helvetica-Bold",
+        alignment=0,
+    )
+    td_style = ParagraphStyle(
+        "TDStyle",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#2D3748"),
+        fontName="Helvetica",
+        alignment=0,
+    )
+
+    table_data = []
+    th_row = [Paragraph(_md_to_reportlab_html(h), th_style) for h in header]
+    table_data.append(th_row)
+
+    for r in rows:
+        td_row = [Paragraph(_md_to_reportlab_html(c), td_style) for c in r]
+        table_data.append(td_row)
+
+    t = Table(table_data, colWidths=actual_widths, repeatRows=1)
+
+    t_style = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E1E2F")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+    ]
+
+    for row_idx in range(1, len(table_data)):
+        if row_idx % 2 == 0:
+            t_style.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#F8FAFC")))
+        else:
+            t_style.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.white))
+
+    t.setStyle(TableStyle(t_style))
+    return t
+
+
 def export_artifact(
     content: str,
     output_path: str,
@@ -88,8 +198,6 @@ def export_artifact(
         PRIMARY = colors.HexColor("#1E1E2F")
         ACCENT = colors.HexColor("#6366F1")
         TEXT_DARK = colors.HexColor("#2D3748")
-        MUTED = colors.HexColor("#718096")
-        BG_LIGHT = colors.HexColor("#F7FAFC")
         BORDER_LIGHT = colors.HexColor("#E2E8F0")
 
         doc = SimpleDocTemplate(
@@ -165,10 +273,30 @@ def export_artifact(
         elements.append(header_table)
         elements.append(HRFlowable(width="100%", thickness=2, color=ACCENT, spaceBefore=4, spaceAfter=14))
 
-        for raw_line in content.split("\n"):
-            line = raw_line.strip()
+        raw_lines = content.split("\n")
+        idx = 0
+        while idx < len(raw_lines):
+            line = raw_lines[idx].strip()
             if not line:
                 elements.append(Spacer(1, 4))
+                idx += 1
+                continue
+
+            # Detect Markdown Table Block
+            if _is_table_row(line):
+                table_lines = []
+                while idx < len(raw_lines) and _is_table_row(raw_lines[idx]):
+                    table_lines.append(raw_lines[idx])
+                    idx += 1
+                
+                parsed_table = _parse_table_block(table_lines)
+                if parsed_table:
+                    hdr, data_rows = parsed_table
+                    rendered_tbl = _render_reportlab_table(hdr, data_rows)
+                    if rendered_tbl:
+                        elements.append(Spacer(1, 4))
+                        elements.append(rendered_tbl)
+                        elements.append(Spacer(1, 6))
                 continue
 
             if line.startswith("### "):
@@ -177,8 +305,8 @@ def export_artifact(
                 elements.append(Paragraph(_md_to_reportlab_html(line[3:]), h1_style))
             elif line.startswith("# "):
                 elements.append(Paragraph(_md_to_reportlab_html(line[2:]), h1_style))
-            elif line.startswith("- [ ]") or line.startswith("- [x]") or line.startswith("- [X]"):
-                is_checked = line.startswith("- [x]") or line.startswith("- [X]")
+            elif line.startswith(("- [ ]", "- [x]", "- [X]")):
+                is_checked = line.startswith(("- [x]", "- [X]"))
                 icon = "[X]" if is_checked else "[  ]"
                 item_text = line[5:].strip()
                 elements.append(Paragraph(f'<font color="#6366F1"><b>{icon}</b></font> {_md_to_reportlab_html(item_text)}', bullet_style))
@@ -208,10 +336,12 @@ def export_artifact(
             else:
                 elements.append(Paragraph(_md_to_reportlab_html(line), body_style))
 
+            idx += 1
+
         if sources:
             elements.append(Spacer(1, 12))
             elements.append(HRFlowable(width="100%", thickness=1, color=ACCENT, spaceBefore=6, spaceAfter=8))
-            elements.append(Paragraph("Fuentes Citadas (Reels / Posts de Creadores)", h2_style))
+            elements.append(Paragraph("📌 Fuentes Citadas (Reels / Posts de Creadores)", h2_style))
 
             source_rows = []
             for i, s in enumerate(sources, 1):
@@ -227,7 +357,7 @@ def export_artifact(
             if source_rows:
                 sources_table = Table(source_rows, colWidths=[540])
                 sources_table.setStyle(TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, -1), BG_LIGHT),
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F7FAFC")),
                     ("BOX", (0, 0), (-1, -1), 0.5, BORDER_LIGHT),
                     ("TOPPADDING", (0, 0), (-1, -1), 4),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
