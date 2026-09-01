@@ -1,12 +1,7 @@
-"""InstaRAG HTTP API (FastAPI).
-
-Run locally with:  uv run api.py
-Interactive docs:  http://localhost:8000/docs
-"""
 import os
+from pathlib import Path
 import shutil
 import tempfile
-from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
@@ -22,7 +17,14 @@ from config.profiles import (
     load_profile,
     save_profile,
 )
-from config.settings import VALID_ANALYSIS_MODES, VALID_EMBED_PROVIDERS, VALID_ENGINES, AppSettings, load_settings, save_settings
+from config.settings import (
+    VALID_ANALYSIS_MODES,
+    VALID_EMBED_PROVIDERS,
+    VALID_ENGINES,
+    AppSettings,
+    load_settings,
+    save_settings,
+)
 from src.api.jobs import manager
 
 app = FastAPI(
@@ -58,6 +60,7 @@ class ProfileIn(BaseModel):
 class ProfilePatch(BaseModel):
     interests: Optional[str] = None
     max_posts: Optional[int] = None
+
     analysis_mode: Optional[str] = None
     audio_only: Optional[bool] = None
 

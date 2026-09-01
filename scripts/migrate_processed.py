@@ -1,19 +1,15 @@
-"""Migrate data/processed/*.json files to the database.
-
-Run with: uv run python scripts/migrate_processed.py
-"""
 import json
-import sys
 from pathlib import Path
+import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from storage.db import get_session, init_db
-from storage.models import ProcessedPost
+from storage.models import Post
 import storage.repositories as repo
 
 
-def migrate():
+def migrate() -> None:
     processed_dir = Path("data/processed")
     if not processed_dir.exists():
         print("No data/processed/ directory found. Nothing to migrate.")
@@ -41,20 +37,20 @@ def migrate():
                 skipped += 1
                 continue
 
-            existing = repo.get_processed_post(db, post_id)
+            existing = repo.get_post(db, post_id)
             if existing:
                 skipped += 1
                 continue
 
-            post = ProcessedPost(
+            post = Post(
                 id=post_id,
                 url=data.get("url", ""),
-                username=data.get("username", ""),
+                creator_username=data.get("creator_username") or data.get("username", ""),
                 type=data.get("type", "Post"),
-                original_description=data.get("original_description", ""),
+                description=data.get("original_description") or data.get("description", ""),
                 extracted_knowledge=data.get("extracted_knowledge", ""),
             )
-            repo.upsert_processed_post(db, post)
+            repo.upsert_post(db, post)
             migrated += 1
 
             if migrated % 50 == 0:
@@ -70,3 +66,4 @@ def migrate():
 
 if __name__ == "__main__":
     migrate()
+

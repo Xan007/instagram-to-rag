@@ -1,7 +1,7 @@
-import typer
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 from rich.console import Console
+import typer
 
 app = typer.Typer(
     name="instarag",
@@ -25,7 +25,7 @@ console = Console()
 
 
 def _get_active_user(user_opt: Optional[str]) -> str:
-    from config.users import resolve_user, list_users
+    from config.users import list_users, resolve_user
     user = resolve_user(user_opt)
     if not user:
         all_users = list_users()
@@ -36,11 +36,8 @@ def _get_active_user(user_opt: Optional[str]) -> str:
     return user.id
 
 
-# ── USER COMMANDS ─────────────────────────────────────────────────────────────
-
 @user_app.command("create")
 def user_create(username: str = typer.Argument(..., help="Username for the new account")):
-    """Create a new local account."""
     from config.users import create_user, load_user
     if load_user(username):
         console.print(f"[bold yellow]User '{username}' already exists.[/bold yellow]")
@@ -51,7 +48,6 @@ def user_create(username: str = typer.Argument(..., help="Username for the new a
 
 @user_app.command("list")
 def user_list():
-    """List all accounts."""
     from config.users import list_users
     users = list_users()
     if not users:
@@ -62,14 +58,11 @@ def user_list():
         console.print(f"  - [bold]{u.username}[/bold] (ID: {u.id})")
 
 
-# ── PROFILE COMMANDS ──────────────────────────────────────────────────────────
-
 @profile_app.command("add")
 def profile_add(
     username: str = typer.Argument(..., help="Instagram creator username"),
 ):
-    """Register an Instagram creator profile globally."""
-    from config.ig_profiles import load_ig_profile, save_ig_profile, IGProfileInfo
+    from config.ig_profiles import IGProfileInfo, load_ig_profile, save_ig_profile
     p = load_ig_profile(username)
     if not p:
         save_ig_profile(IGProfileInfo(username=username))
@@ -85,7 +78,6 @@ def profile_scrape_cmd(
     newer_than: Optional[str] = typer.Option(None, "--newer-than", help="Only scrape newer than date"),
     keep_media: bool = typer.Option(False, "--keep-media", help="Keep media files"),
 ):
-    """Scrape and index all posts of a creator globally (without interest filters)."""
     from src.pipeline import scrape_profile
     try:
         res = scrape_profile(
@@ -106,10 +98,9 @@ def profile_update_cmd(
     username: str = typer.Argument(..., help="Instagram creator username"),
     keep_media: bool = typer.Option(False, "--keep-media", help="Keep media files"),
 ):
-    """Incrementally scrape only new posts for a creator since the last scrape."""
+    from datetime import datetime, timezone
     from config.ig_profiles import load_ig_profile
     from src.pipeline import scrape_profile
-    from datetime import datetime, timezone
 
     p = load_ig_profile(username)
     effective_newer = None
@@ -133,7 +124,6 @@ def profile_update_cmd(
 
 @profile_app.command("list")
 def profile_list():
-    """List all globally registered creator profiles."""
     from config.ig_profiles import list_ig_profiles
     profiles = list_ig_profiles()
     if not profiles:
@@ -144,15 +134,12 @@ def profile_list():
         console.print(f"  - @[bold]{p.username}[/bold] | Posts scraped: {p.total_posts_scraped} | Last run: {p.last_run_at or 'never'}")
 
 
-# ── GROUP (RAG AGENT) COMMANDS ────────────────────────────────────────────────
-
 @group_app.command("create")
 def group_create_cmd(
     name: str = typer.Argument(..., help="Name of the RAG agent/group"),
     description: str = typer.Option("", "--desc", "-d", help="Description of the group agent"),
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Username owner"),
 ):
-    """Create a new scoped RAG Agent group."""
     from config.groups import create_group, load_group_by_name
     uid = _get_active_user(user)
     if load_group_by_name(uid, name):
@@ -166,7 +153,6 @@ def group_create_cmd(
 def group_list_cmd(
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Username"),
 ):
-    """List all groups (owned and shared) for an account."""
     from config.groups import list_groups_for_user
     uid = _get_active_user(user)
     groups = list_groups_for_user(uid)
@@ -186,7 +172,6 @@ def group_add_from_profile_cmd(
     interests: Optional[str] = typer.Option(None, "--interests", "-i", help="Filter posts by topic/interests before adding"),
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Account username"),
 ):
-    """Populate a group with posts from a creator, optionally filtered by interests."""
     from src.pipeline import populate_group_from_profile
     uid = _get_active_user(user)
     try:
@@ -203,9 +188,7 @@ def group_add_post_cmd(
     url_or_id: str = typer.Argument(..., help="Post URL or shortcode ID"),
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Account username"),
 ):
-    """Add a specific reel/post to a group."""
-    from config.groups import load_group_by_name, add_post_to_group
-    from config.utils import shortcode_from_url
+    from config.groups import add_post_to_group, load_group_by_name
     from src.pipeline import add_reel
 
     uid = _get_active_user(user)
@@ -227,7 +210,6 @@ def group_share_cmd(
     target_user: str = typer.Argument(..., help="Target username to grant access"),
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Owner username"),
 ):
-    """Share a RAG agent group with another account."""
     from config.groups import load_group_by_name, share_group
     from config.users import load_user
 
@@ -248,14 +230,11 @@ def group_share_cmd(
         console.print(f"[yellow]Group was already shared with '{target_user}'.[/yellow]")
 
 
-# ── SAVED COMMANDS ────────────────────────────────────────────────────────────
-
 @saved_app.command("import")
 def saved_import_cmd(
     path: Path = typer.Argument(..., help="Path to your Instagram zip export or saved_posts.json"),
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Account username"),
 ):
-    """Import saved posts from an Instagram data export for this user."""
     from src.pipeline import import_user_saved_posts
     uid = _get_active_user(user)
     try:
@@ -273,7 +252,6 @@ def saved_process_cmd(
     workers: int = typer.Option(4, "--workers", help="Worker count"),
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Account username"),
 ):
-    """Download, extract knowledge, and index imported saved posts."""
     from src.pipeline import process_saved
     uid = _get_active_user(user)
     try:
@@ -284,8 +262,6 @@ def saved_process_cmd(
         raise typer.Exit(1)
 
 
-# ── GLOBAL QUERY & CHAT ───────────────────────────────────────────────────────
-
 @app.command("query")
 def query_cmd(
     question: str = typer.Argument(..., help="Question to ask"),
@@ -295,7 +271,6 @@ def query_cmd(
     top_k: int = typer.Option(6, "--top-k", help="Top matches"),
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Account username"),
 ):
-    """Query the knowledge base across creators or scoped to a custom Group Agent."""
     from src.pipeline import query_knowledge
     uid = None
     if group:
@@ -322,7 +297,6 @@ def chat_cmd(
     mode: str = typer.Option("grounded_plus", "--mode", help="'grounded_plus' or 'strict'"),
     user: Optional[str] = typer.Option(None, "--user", "-u", help="Account username"),
 ):
-    """Interactive multi-turn chat with a Creator or a custom Group Agent."""
     from src.pipeline import query_knowledge
     uid = None
     if group:
@@ -357,3 +331,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
