@@ -288,6 +288,7 @@ def query_cmd(
             top_k=top_k,
             mode=mode,
             artifact_type=artifact,
+            export_path=export,
         )
         console.print("\n[bold green]=== Answer ===[/bold green]\n")
         console.print(res["answer"])
@@ -298,16 +299,9 @@ def query_cmd(
                     summary_str = f" [dim]({s['summary']})[/dim]" if s.get("summary") else ""
                     console.print(f" - [Source {i}] @{s['creator']}: {s['url']}{summary_str}")
 
-
-        if export:
-            title = artifact.replace("_", " ").title() if artifact else "InstaRAG Query Export"
-            exported_path = export_artifact(
-                content=res["answer"],
-                output_path=export,
-                title=title,
-                sources=res.get("sources"),
-            )
-            console.print(f"\n[bold green][OK] Artifact exported successfully to:[/bold green] [cyan]{exported_path}[/cyan]")
+        if res.get("artifact"):
+            art = res["artifact"]
+            console.print(f"\n[bold green][OK] Document delegated & saved to:[/bold green] [cyan]{art['path']}[/cyan] [dim]({art['title']})[/dim]")
     except Exception as e:
         console.print(f"[bold red]Query failed:[/bold red] {e}")
         raise typer.Exit(1)
@@ -343,10 +337,14 @@ def chat_cmd(
         try:
             res = query_knowledge(q, creator=creator, group_name=group, user_id=uid, mode=mode, history=history)
             console.print(f"\n[bold green]Assistant:[/bold green]\n{res['answer']}")
+            if res.get("artifact"):
+                art = res["artifact"]
+                console.print(f"\n[bold green][OK] Document generated & saved to:[/bold green] [cyan]{art['path']}[/cyan]")
             history.append({"role": "user", "content": q})
             history.append({"role": "assistant", "content": res["answer"]})
         except Exception as e:
             console.print(f"[bold red]Error:[/bold red] {e}")
+
 
 
 def main():
