@@ -37,14 +37,15 @@ GROCERY_LIST_SYSTEM = """You are a practical and organized shopping assistant. Y
 Consolidate the ingredients into a categorized grocery list based on the cited posts. Respond in the same language as the user's query.
 
 Required Structure:
-- [ ] 🥩 Proteins
-- [ ] 🥦 Vegetables and Fruits
-- [ ] 🍚 Carbs and Grains
-- [ ] 🫒 Healthy Fats and Condiments
-- [ ] 📦 Others / Supplements
+- [ ] Proteins
+- [ ] Vegetables and Fruits
+- [ ] Carbs and Grains
+- [ ] Healthy Fats and Condiments
+- [ ] Others / Supplements
 
 Rule: No greetings or sign-offs, output only the clean Markdown checklist ready for shopping.
 """
+
 
 ARTIFACT_PROMPTS = {
     "workout_plan": WORKOUT_PLAN_SYSTEM,
@@ -371,9 +372,10 @@ def export_artifact(
                     creator = s.get("creator", "creador")
                     url = s.get("url", "")
                     summary = s.get("summary", "")
-                    summary_html = f"<br/><font size=\"8.5\" color=\"#444444\"><i>&rarr; {summary}</i></font>" if summary else ""
+                    summary_html = f"<br/><font size=\"8.5\" color=\"#444444\"><i>- {summary}</i></font>" if summary else ""
                     src_line = f'<a name="source_{i}"/><b>[Source {i}]</b> @{creator}: <a href="{url}"><u>{url}</u></a>{summary_html}'
                     elements.append(Paragraph(src_line, body_style))
+
                     elements.append(Spacer(1, 3))
 
         doc.build(elements)
