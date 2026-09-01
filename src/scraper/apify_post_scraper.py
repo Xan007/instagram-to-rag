@@ -1,13 +1,6 @@
-"""Fetch individual posts/reels by URL via the official apify/instagram-scraper actor.
-
-Used ONLY by the add-reel flow: it returns direct media URLs (videoUrl,
-images) so no Instagram session or yt-dlp is needed for ingestion.
-"""
 import os
-from typing import Any, Dict, List
-
+from typing import Any, Dict, List, Optional
 from apify_client import ApifyClient
-
 from config.env import load_runtime_env
 from config.utils import shortcode_from_url
 from src.scraper.apify_scraper import _extract_hashtags
@@ -18,7 +11,6 @@ ACTOR_ID = "apify/instagram-scraper"
 
 
 def _normalize_post(item: Dict[str, Any]) -> Dict[str, Any]:
-    """Map an apify/instagram-scraper post item to the pipeline post shape."""
     shortcode = item.get("shortCode") or shortcode_from_url(item.get("url") or item.get("inputUrl") or "")
     post_type = "Sidecar" if item.get("childPosts") else (item.get("type") or "Image")
 
@@ -50,14 +42,13 @@ def _normalize_post(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class ApifyPostScraper:
-    def __init__(self):
-        api_key = os.getenv("APIFY_API_KEY")
-        if not api_key:
+    def __init__(self, api_key: Optional[str] = None):
+        key = api_key or os.getenv("APIFY_API_KEY")
+        if not key:
             raise ValueError("APIFY_API_KEY environment variable is not set. Cannot use Apify.")
-        self.client = ApifyClient(api_key)
+        self.client = ApifyClient(key)
 
     def get_posts_by_urls(self, urls: List[str]) -> List[Dict[str, Any]]:
-        """Scrape specific posts/reels by URL. Returns one normalized post per URL."""
         run_input = {
             "resultsType": "posts",
             "directUrls": list(urls),
@@ -76,3 +67,4 @@ class ApifyPostScraper:
             except ValueError:
                 continue
         return posts
+

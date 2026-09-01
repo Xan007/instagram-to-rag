@@ -3,7 +3,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import List, Dict, Generator, Any, Optional
+from typing import Any, Dict, Generator, List, Optional
 from apify_client import ApifyClient
 from config.env import load_runtime_env
 
@@ -22,7 +22,6 @@ def _extract_hashtags(text: str) -> List[str]:
 
 
 def _best_video_url(node: Dict[str, Any]) -> Optional[str]:
-    """Video URL from flat field or the highest-resolution video_versions entry."""
     if node.get("video_url"):
         return node["video_url"]
     versions = [v for v in (node.get("video_versions") or []) if isinstance(v, dict) and v.get("url")]
@@ -33,7 +32,6 @@ def _best_video_url(node: Dict[str, Any]) -> Optional[str]:
 
 
 def _best_image_url(node: Dict[str, Any]) -> Optional[str]:
-    """Image URL from flat field or image_versions2 candidates (~1080px preferred)."""
     if node.get("image_url"):
         return node["image_url"]
     iv = node.get("image_versions2")
@@ -77,7 +75,6 @@ def _media_items_for(node: Dict[str, Any], media_type: int, warn_prefix: str = "
 
 
 def parse_newer_than(value: str) -> Optional[float]:
-    """Parse ISO-8601, YYYY-MM-DD, or Unix seconds/milliseconds into Unix seconds."""
     raw = value.strip()
     if not raw:
         return None
@@ -100,7 +97,6 @@ def parse_newer_than(value: str) -> Optional[float]:
 
 
 def passes_newer_than(item: Dict[str, Any], cutoff_seconds: Optional[float]) -> bool:
-    """Local strict filter; newerThan is only a pagination boundary for the Actor."""
     if cutoff_seconds is None:
         return True
     flag = item.get("is_newer_than_cutoff")
@@ -135,13 +131,7 @@ class ApifyScraper:
         if self.only_posts_newer_than:
             run_input["newerThan"] = self.only_posts_newer_than
 
-        logger.info("Calling %s for @%s", ACTOR_ID, username)
-        logger.info("Requesting up to %d posts (target: %d new + %d already processed)", requested, limit, len(skip_set))
-        if self.only_posts_newer_than:
-            logger.info("Date filter: only posts newer than %s", self.only_posts_newer_than)
-        if limit + len(skip_set) > ACTOR_MAX_POSTS_PER_PROFILE:
-            logger.warning("postsPerProfile is capped at %d by the actor; may return fewer than %d new posts after skipping.",
-                          ACTOR_MAX_POSTS_PER_PROFILE, limit)
+        logger.info("Calling %s for @%s (requested: %d)", ACTOR_ID, username, requested)
 
         run = self.client.actor(ACTOR_ID).call(run_input=run_input)
 
@@ -161,14 +151,10 @@ class ApifyScraper:
 
             if shortcode in skip_set:
                 skipped_processed += 1
-                if self.verbose:
-                    logger.debug("SKIP %s: already processed", shortcode)
                 continue
 
             if not passes_newer_than(item, cutoff_seconds):
                 skipped_old += 1
-                if self.verbose:
-                    logger.debug("SKIP %s: older than newerThan boundary", shortcode)
                 continue
 
             media_type = item.get("media_type", 1)
@@ -178,11 +164,6 @@ class ApifyScraper:
             media_items = _media_items_for(item, media_type, warn_prefix=shortcode)
             if not media_items:
                 no_media += 1
-
-            if self.verbose:
-                media_desc = ", ".join(m["type"] for m in media_items) or "NO MEDIA"
-                post_type = MEDIA_TYPE_TO_POST_TYPE.get(media_type, "Image")
-                logger.debug("GOT %s: type=%s, media=[%s]", shortcode, post_type, media_desc)
 
             metadata = {
                 "id": shortcode,
@@ -201,14 +182,17 @@ class ApifyScraper:
         if count == 0:
             summary = self._read_run_summary(run)
             if summary:
-                logger.debug("RUN_SUMMARY (diagnostics): %s", json.dumps(summary, default=str)[:800])
+                logger.debug("RUN_SUMMARY: %s", json.dumps(summary, default=str)[:800])
 
-        logger.info("Done: yielded %d new post(s), skipped %d already processed, "
-                    "%d older than cutoff, %d post(s) without media URLs.",
-                    count, skipped_processed, skipped_old, no_media)
+        logger.info(
+            "Scrape complete: yielded %d new post(s), skipped %d processed, %d older, %d without media.",
+            count,
+            skipped_processed,
+            skipped_old,
+            no_media,
+        )
 
     def _read_run_summary(self, run: Any) -> Optional[Dict[str, Any]]:
-        """Fetch the actor's RUN_SUMMARY record from the run's key-value store."""
         try:
             kvs_id = (
                 run.get("defaultKeyValueStoreId")
