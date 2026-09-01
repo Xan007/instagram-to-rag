@@ -339,9 +339,11 @@ def export_artifact(
                 if s.get("cited", True):
                     creator = s.get("creator", "creador")
                     url = s.get("url", "")
-                    src_line = f'<a name="source_{i}"/><b>[Source {i}]</b> @{creator}: <a href="{url}"><u>{url}</u></a>'
+                    summary = s.get("summary", "")
+                    summary_html = f"<br/><font size=\"8.5\" color=\"#444444\"><i>&rarr; {summary}</i></font>" if summary else ""
+                    src_line = f'<a name="source_{i}"/><b>[Source {i}]</b> @{creator}: <a href="{url}"><u>{url}</u></a>{summary_html}'
                     elements.append(Paragraph(src_line, body_style))
-
+                    elements.append(Spacer(1, 3))
 
         doc.build(elements)
     else:
@@ -350,7 +352,9 @@ def export_artifact(
             full_text += "\n\n---\n### Fuentes Citadas\n"
             for i, s in enumerate(sources, 1):
                 if s.get("cited", True):
-                    full_text += f"- **[Source {i}]** @{s.get('creator', '')}: {s.get('url', '')}\n"
+                    summary_str = f" — *{s.get('summary')}*" if s.get("summary") else ""
+                    full_text += f"- **[Source {i}]** @{s.get('creator', '')}: {s.get('url', '')}{summary_str}\n"
         out.write_text(full_text, encoding="utf-8")
 
     return out.resolve()
+

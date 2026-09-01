@@ -64,6 +64,23 @@ followed by 1-3 plain sentences of widely accepted knowledge on the topic.
 
 from src.embeddings.factory import EmbeddingFactory
 
+def _extract_brief_summary(knowledge: str, caption: str) -> str:
+    text = (knowledge or "").strip() or (caption or "").strip()
+    if not text:
+        return "Contenido y recomendaciones del post"
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+        if not line or line.startswith(("#", "-", "*", "=")):
+            continue
+        cleaned = re.sub(r"\[Source\s*\d+[^\]]*\]", "", line).strip()
+        if len(cleaned) >= 10:
+            if len(cleaned) > 110:
+                cleaned = cleaned[:107] + "..."
+            return cleaned
+    first_line = text.split("\n")[0].strip()
+    return (first_line[:107] + "...") if len(first_line) > 110 else first_line
+
+
 class QueryEngine:
     def __init__(self):
         pinecone_key = os.getenv("PINECONE_API_KEY")
@@ -83,7 +100,6 @@ class QueryEngine:
         except Exception as e:
             logger.warning("Embedding retrieval error (%s); falling back to BM25 local.", e)
             return None
-
 
     @staticmethod
     def build_context(matches: List[Dict[str, Any]], min_score: float) -> tuple:
@@ -107,15 +123,17 @@ class QueryEngine:
                 dropped += 1
                 continue
 
+            summary = _extract_brief_summary(knowledge, caption)
             part = f"[Source {len(sources) + 1}]\nCreator: @{post_creator}\nPost URL: {post_url}\n"
             if caption:
                 part += f"Caption: {caption[:MAX_CAPTION_CHARS]}\n"
             part += f"Knowledge:\n{knowledge}\n"
             context_parts.append(part)
-            sources.append({"creator": post_creator, "url": post_url, "score": score})
+            sources.append({"creator": post_creator, "url": post_url, "score": score, "summary": summary})
 
         full_context = "\n---\n".join(context_parts)
         return full_context, sources, dropped
+
 
     @staticmethod
     def build_prompt(
