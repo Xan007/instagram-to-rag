@@ -1,5 +1,9 @@
 from dataclasses import asdict, dataclass, field
-from typing import List, Optional
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+import zipfile
 
 from config.utils import URL_SHORTCODE_RE
 
@@ -17,7 +21,6 @@ class SavedState:
 
 
 def _repo():
-    """Lazy import to avoid creating engine at module load time."""
     import storage.repositories as repo
     return repo
 
@@ -27,37 +30,36 @@ def _db():
     return get_session()
 
 
-def load_state() -> SavedState:
+def load_state(user_id: str = "default") -> SavedState:
     db = _db()
     try:
-        model = _repo().get_saved_state(db)
+        model = _repo().get_user_saved_state(db, user_id)
         return SavedState(
             total=model.total or 0,
             imported_at=model.imported_at or "",
             source=model.source or "",
-            processed_ids=model.processed_ids or [],
-            failed_ids=model.failed_ids or [],
+            processed_ids=list(model.processed_ids or []),
+            failed_ids=list(model.failed_ids or []),
         )
     finally:
         db.close()
 
 
-def save_state(state: SavedState) -> None:
+def save_state(state: SavedState, user_id: str = "default") -> None:
     db = _db()
     try:
-        model = _repo().get_saved_state(db)
+        model = _repo().get_user_saved_state(db, user_id)
         model.total = state.total
         model.imported_at = state.imported_at
         model.source = state.source
-        model.processed_ids = state.processed_ids
-        model.failed_ids = state.failed_ids
-        _repo().save_saved_state(db, model)
+        model.processed_ids = list(state.processed_ids or [])
+        model.failed_ids = list(state.failed_ids or [])
+        _repo().save_user_saved_state(db, model)
     finally:
         db.close()
 
 
-def _extract_saved_posts_json_from_zip(zip_path):
-    import zipfile
+def _extract_saved_posts_json_from_zip(zip_path: Path) -> bytes:
     with zipfile.ZipFile(zip_path) as zf:
         candidates = [
             n
@@ -73,11 +75,7 @@ def _extract_saved_posts_json_from_zip(zip_path):
         return zf.read(name)
 
 
-def import_saved_posts(path) -> SavedState:
-    import json
-    from datetime import datetime
-    from pathlib import Path
-
+def import_saved_posts(path: Path, user_id: str = "default") -> SavedState:
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
@@ -91,54 +89,58 @@ def import_saved_posts(path) -> SavedState:
     data = json.loads(raw.decode("utf-8"))
     items = parse_saved_posts(data)
 
-    from storage.models import SavedPost
+    from storage.models import Post, UserSavedPost
     db = _db()
     try:
-        models = [
-            SavedPost(
-                id=item["id"],
-                url=item["url"],
-                caption=item["caption"],
-                title=item["title"],
-                timestamp=item.get("timestamp", 0),
-            )
-            for item in items
-        ]
-        _repo().upsert_saved_posts_bulk(db, models)
+        for item in items:
+            post_id = item["id"]
+            existing = _repo().get_post(db, post_id)
+            if not existing:
+                desc = (item.get("title", "") + "\n" + item.get("caption", "")).strip()
+                post_type = "Reel" if "/reel/" in item.get("url", "") else "Post"
+                _repo().upsert_post(
+                    db,
+                    Post(
+                        id=post_id,
+                        url=item.get("url", ""),
+                        creator_username="",
+                        type=post_type,
+                        description=desc,
+                    ),
+                )
+            _repo().add_user_saved_post(db, user_id, post_id, source_url=item.get("url", ""))
 
-        state = _repo().get_saved_state(db)
-        state.total = len(items)
-        state.imported_at = datetime.now().isoformat(timespec="seconds")
+        state = _repo().get_user_saved_state(db, user_id)
+        state.total = _repo().count_user_saved_posts(db, user_id)
+        state.imported_at = datetime.now(timezone.utc).isoformat()
         state.source = source
-        _repo().save_saved_state(db, state)
+        _repo().save_user_saved_state(db, state)
 
         return SavedState(
             total=state.total,
             imported_at=state.imported_at,
             source=state.source,
-            processed_ids=state.processed_ids or [],
-            failed_ids=state.failed_ids or [],
+            processed_ids=list(state.processed_ids or []),
+            failed_ids=list(state.failed_ids or []),
         )
     finally:
         db.close()
 
 
-def parse_saved_posts(data) -> List[dict]:
-    import json as _json
-
+def parse_saved_posts(data: Any) -> List[Dict[str, Any]]:
     if isinstance(data, dict):
         data = data.get("saved_posts") or data.get("saved_collections") or []
     if not isinstance(data, list):
         raise ValueError("Unrecognized saved_posts.json format.")
 
-    posts: List[dict] = []
+    posts: List[Dict[str, Any]] = []
     for item in data:
         if not isinstance(item, dict):
             continue
         if "label_values" in item:
             labels = {}
             for lv in item.get("label_values", []):
-                if "label" in lv:
+                if isinstance(lv, dict) and "label" in lv:
                     labels[str(lv["label"]).lower()] = lv.get("value", "")
             url = labels.get("url", "")
             caption = labels.get("pie de foto", "") or labels.get("caption", "")
@@ -162,3 +164,4 @@ def parse_saved_posts(data) -> List[dict]:
             }
         )
     return posts
+

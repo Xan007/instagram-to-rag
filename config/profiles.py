@@ -11,9 +11,7 @@ class ProfileConfig:
     analysis_mode: str = "gemini"
     audio_only: bool = False
     failed_ids: List[str] = field(default_factory=list)
-    # Unix timestamp of the last successful scrape (used by `profile update`)
     last_scraped_at: Optional[float] = None
-    # ISO-8601 string of the last pipeline run start time
     last_run_at: Optional[str] = None
 
     def to_dict(self):
@@ -21,7 +19,6 @@ class ProfileConfig:
 
 
 def _repo():
-    """Lazy import to avoid creating engine at module load time."""
     import storage.repositories as repo
     return repo
 
@@ -32,8 +29,8 @@ def _db():
 
 
 def _to_model(profile: ProfileConfig):
-    from storage.models import Profile
-    return Profile(
+    from storage.models import IGProfile
+    return IGProfile(
         username=profile.username,
         interests=profile.interests,
         max_posts=profile.max_posts,
@@ -51,10 +48,10 @@ def _from_model(model) -> ProfileConfig:
         username=model.username,
         interests=model.interests or "",
         max_posts=model.max_posts or 50,
-        processed_ids=model.processed_ids or [],
+        processed_ids=list(model.processed_ids or []),
         analysis_mode=model.analysis_mode or "gemini",
-        audio_only=model.audio_only or False,
-        failed_ids=model.failed_ids or [],
+        audio_only=bool(model.audio_only),
+        failed_ids=list(model.failed_ids or []),
         last_scraped_at=getattr(model, "last_scraped_at", None),
         last_run_at=getattr(model, "last_run_at", None),
     )
@@ -63,7 +60,7 @@ def _from_model(model) -> ProfileConfig:
 def load_profile(username: str) -> Optional[ProfileConfig]:
     db = _db()
     try:
-        model = _repo().get_profile(db, username)
+        model = _repo().get_ig_profile(db, username)
         return _from_model(model) if model else None
     finally:
         db.close()
@@ -73,7 +70,7 @@ def save_profile(profile: ProfileConfig) -> None:
     db = _db()
     try:
         model = _to_model(profile)
-        _repo().upsert_profile(db, model)
+        _repo().upsert_ig_profile(db, model)
     finally:
         db.close()
 
@@ -81,7 +78,7 @@ def save_profile(profile: ProfileConfig) -> None:
 def list_profiles() -> List[str]:
     db = _db()
     try:
-        return [p.username for p in _repo().list_profiles(db)]
+        return [p.username for p in _repo().list_ig_profiles(db)]
     finally:
         db.close()
 
@@ -89,6 +86,7 @@ def list_profiles() -> List[str]:
 def delete_profile(username: str) -> bool:
     db = _db()
     try:
-        return _repo().delete_profile(db, username)
+        return _repo().delete_ig_profile(db, username)
     finally:
         db.close()
+

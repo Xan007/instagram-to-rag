@@ -1,14 +1,10 @@
-"""Global Instagram profile config helpers.
-
-IGProfiles are scraped once and shared across all users.
-There are no per-user interests here — interests live at the Group level.
-"""
 from dataclasses import dataclass
 from typing import List, Optional
 
 
 @dataclass
 class IGProfileInfo:
+
     username: str
     last_scraped_at: Optional[float] = None
     last_run_at: Optional[str] = None

@@ -22,9 +22,9 @@ class AppSettings:
 
 
 def _repo():
-    """Lazy import to avoid creating engine at module load time."""
     import storage.repositories as repo
     return repo
+
 
 
 def _db():

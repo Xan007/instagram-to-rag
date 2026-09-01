@@ -1,4 +1,3 @@
-"""Group (RAG agent) config helpers."""
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -11,12 +10,13 @@ class GroupInfo:
     description: str = ""
     created_at: float = 0.0
     post_count: int = 0
-    shared_with: List[str] = field(default_factory=list)  # user_ids
+    shared_with: List[str] = field(default_factory=list)
 
 
 def _repo():
     import storage.repositories as repo
     return repo
+
 
 
 def _db():

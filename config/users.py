@@ -1,10 +1,10 @@
-"""User management helpers (config layer)."""
 from dataclasses import dataclass
 from typing import List, Optional
 
 
 @dataclass
 class UserInfo:
+
     id: str
     username: str
     created_at: float
