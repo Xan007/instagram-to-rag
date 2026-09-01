@@ -1,11 +1,6 @@
-"""Repository layer — all DB access lives here.
-
-Each function takes a Session and returns ORM objects or primitives.
-Callers are responsible for opening/closing the session.
-"""
+import time
 from typing import List, Optional
 import uuid
-import time
 
 from sqlalchemy.orm import Session
 
@@ -22,13 +17,9 @@ from storage.models import (
 )
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def _new_uuid() -> str:
     return str(uuid.uuid4())
 
-
-# ── Settings ──────────────────────────────────────────────────────────────────
 
 def get_setting(db: Session, key: str) -> Optional[dict]:
     row = db.query(Setting).filter(Setting.key == key).first()
@@ -47,8 +38,6 @@ def set_setting(db: Session, key: str, value: dict) -> None:
 def get_all_settings(db: Session) -> dict:
     return {row.key: row.value for row in db.query(Setting).all()}
 
-
-# ── Users ─────────────────────────────────────────────────────────────────────
 
 def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
     return db.query(User).filter(User.id == user_id).first()
@@ -79,8 +68,6 @@ def delete_user(db: Session, user_id: str) -> bool:
     return True
 
 
-# ── IGProfiles (global) ───────────────────────────────────────────────────────
-
 def get_ig_profile(db: Session, username: str) -> Optional[IGProfile]:
     return db.query(IGProfile).filter(IGProfile.username == username).first()
 
@@ -98,6 +85,18 @@ def upsert_ig_profile(db: Session, profile: IGProfile) -> IGProfile:
             existing.last_run_at = profile.last_run_at
         if profile.total_posts_scraped is not None:
             existing.total_posts_scraped = profile.total_posts_scraped
+        if profile.interests is not None:
+            existing.interests = profile.interests
+        if profile.max_posts is not None:
+            existing.max_posts = profile.max_posts
+        if profile.processed_ids is not None:
+            existing.processed_ids = profile.processed_ids
+        if profile.failed_ids is not None:
+            existing.failed_ids = profile.failed_ids
+        if profile.analysis_mode is not None:
+            existing.analysis_mode = profile.analysis_mode
+        if profile.audio_only is not None:
+            existing.audio_only = profile.audio_only
         db.commit()
         db.refresh(existing)
         return existing
@@ -116,7 +115,11 @@ def delete_ig_profile(db: Session, username: str) -> bool:
     return True
 
 
-# ── Posts (global, deduplicated) ──────────────────────────────────────────────
+get_profile = get_ig_profile
+list_profiles = list_ig_profiles
+upsert_profile = upsert_ig_profile
+delete_profile = delete_ig_profile
+
 
 def get_post(db: Session, post_id: str) -> Optional[Post]:
     return db.query(Post).filter(Post.id == post_id).first()
@@ -141,6 +144,10 @@ def upsert_post(db: Session, post: Post) -> Post:
     return post
 
 
+get_processed_post = get_post
+upsert_processed_post = upsert_post
+
+
 def list_posts(db: Session, creator_username: Optional[str] = None) -> List[Post]:
     q = db.query(Post)
     if creator_username:
@@ -162,8 +169,6 @@ def get_all_post_ids(db: Session, creator_username: Optional[str] = None) -> Lis
     return [row[0] for row in q.all()]
 
 
-# ── Groups ────────────────────────────────────────────────────────────────────
-
 def get_group(db: Session, group_id: str) -> Optional[Group]:
     return db.query(Group).filter(Group.id == group_id).first()
 
@@ -177,7 +182,6 @@ def get_group_by_name(db: Session, owner_id: str, name: str) -> Optional[Group]:
 
 
 def list_groups_for_user(db: Session, user_id: str) -> List[Group]:
-    """Own groups + groups shared with this user."""
     owned = db.query(Group).filter(Group.owner_id == user_id).all()
     shared_ids = [
         row.group_id
@@ -205,7 +209,6 @@ def delete_group(db: Session, group_id: str) -> bool:
     group = get_group(db, group_id)
     if not group:
         return False
-    # Cascade: remove group posts and shares
     db.query(GroupPost).filter(GroupPost.group_id == group_id).delete()
     db.query(GroupShare).filter(GroupShare.group_id == group_id).delete()
     db.delete(group)
@@ -213,10 +216,7 @@ def delete_group(db: Session, group_id: str) -> bool:
     return True
 
 
-# ── GroupPosts ────────────────────────────────────────────────────────────────
-
 def add_post_to_group(db: Session, group_id: str, post_id: str) -> bool:
-    """Add post to group; returns False if already present."""
     existing = (
         db.query(GroupPost)
         .filter(GroupPost.group_id == group_id, GroupPost.post_id == post_id)
@@ -250,8 +250,6 @@ def count_posts_in_group(db: Session, group_id: str) -> int:
     return db.query(GroupPost).filter(GroupPost.group_id == group_id).count()
 
 
-# ── GroupShares ───────────────────────────────────────────────────────────────
-
 def share_group(db: Session, group_id: str, user_id: str) -> bool:
     existing = (
         db.query(GroupShare)
@@ -276,7 +274,6 @@ def unshare_group(db: Session, group_id: str, user_id: str) -> bool:
 
 
 def list_group_shares(db: Session, group_id: str) -> List[str]:
-    """Return user_ids that have read access to this group."""
     return [
         row.user_id
         for row in db.query(GroupShare).filter(GroupShare.group_id == group_id).all()
@@ -284,7 +281,6 @@ def list_group_shares(db: Session, group_id: str) -> List[str]:
 
 
 def user_can_access_group(db: Session, user_id: str, group_id: str) -> bool:
-    """True if the user owns or has shared access to the group."""
     group = get_group(db, group_id)
     if not group:
         return False
@@ -297,8 +293,6 @@ def user_can_access_group(db: Session, user_id: str, group_id: str) -> bool:
         is not None
     )
 
-
-# ── UserSavedPosts ────────────────────────────────────────────────────────────
 
 def add_user_saved_post(db: Session, user_id: str, post_id: str, source_url: str = "") -> bool:
     existing = (
@@ -324,8 +318,6 @@ def count_user_saved_posts(db: Session, user_id: str) -> int:
     return db.query(UserSavedPost).filter(UserSavedPost.user_id == user_id).count()
 
 
-# ── UserSavedState ────────────────────────────────────────────────────────────
-
 def get_user_saved_state(db: Session, user_id: str) -> UserSavedState:
     state = db.query(UserSavedState).filter(UserSavedState.user_id == user_id).first()
     if not state:
@@ -338,3 +330,24 @@ def get_user_saved_state(db: Session, user_id: str) -> UserSavedState:
 
 def save_user_saved_state(db: Session, state: UserSavedState) -> None:
     db.commit()
+
+
+def get_saved_state(db: Session, user_id: str = "default") -> UserSavedState:
+    return get_user_saved_state(db, user_id)
+
+
+def save_saved_state(db: Session, state: UserSavedState) -> None:
+    save_user_saved_state(db, state)
+
+
+def upsert_saved_posts_bulk(db: Session, posts: List[UserSavedPost]) -> None:
+    for p in posts:
+        existing = (
+            db.query(UserSavedPost)
+            .filter(UserSavedPost.user_id == p.user_id, UserSavedPost.post_id == p.post_id)
+            .first()
+        )
+        if not existing:
+            db.add(p)
+    db.commit()
+

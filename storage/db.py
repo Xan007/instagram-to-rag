@@ -1,4 +1,3 @@
-"""Database engine, session management, and inline migrations."""
 import os
 from pathlib import Path
 from typing import Generator
@@ -19,7 +18,7 @@ def _get_database_url() -> str:
 
 
 def get_engine():
-    global _engine, _current_url
+    global _engine, _current_url, _SessionLocal
     url = _get_database_url()
     if _engine is None or url != _current_url:
         _current_url = url
@@ -33,7 +32,6 @@ def get_engine():
                 db_path = url.replace("sqlite:///", "")
                 Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         _engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
-        global _SessionLocal
         _SessionLocal = None
     return _engine
 
@@ -46,12 +44,6 @@ def _get_session_factory():
 
 
 def _migrate(engine) -> None:
-    """Lightweight inline migration for SQLite.
-
-    SQLAlchemy's create_all adds missing *tables* but not missing *columns*
-    in existing tables. We handle that here so existing installations upgrade
-    automatically without dropping data.
-    """
     url = str(engine.url)
     if not url.startswith("sqlite"):
         return
@@ -65,16 +57,24 @@ def _migrate(engine) -> None:
             if col not in existing_cols(table):
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
 
-        # ig_profiles — new table in this version; columns added for safety
         tables = {row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
         if "ig_profiles" in tables:
             add_col_if_missing("ig_profiles", "total_posts_scraped", "INTEGER DEFAULT 0")
+            add_col_if_missing("ig_profiles", "interests", "VARCHAR DEFAULT ''")
+            add_col_if_missing("ig_profiles", "max_posts", "INTEGER DEFAULT 50")
+            add_col_if_missing("ig_profiles", "processed_ids", "JSON DEFAULT '[]'")
+            add_col_if_missing("ig_profiles", "failed_ids", "JSON DEFAULT '[]'")
+            add_col_if_missing("ig_profiles", "analysis_mode", "VARCHAR DEFAULT 'gemini'")
+            add_col_if_missing("ig_profiles", "audio_only", "BOOLEAN DEFAULT 0")
+
+        if "user_saved_states" in tables:
+            add_col_if_missing("user_saved_states", "processed_ids", "JSON DEFAULT '[]'")
+            add_col_if_missing("user_saved_states", "failed_ids", "JSON DEFAULT '[]'")
 
         conn.commit()
 
 
 def init_db() -> None:
-    """Create all tables and run inline migrations."""
     from storage.models import Base
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
@@ -82,7 +82,6 @@ def init_db() -> None:
 
 
 def get_db() -> Generator[Session, None, None]:
-    """FastAPI dependency: yields a session, closes on exit."""
     db = _get_session_factory()()
     try:
         yield db
@@ -91,5 +90,5 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def get_session() -> Session:
-    """Return a raw session for CLI / pipeline use."""
     return _get_session_factory()()
+

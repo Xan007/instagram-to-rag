@@ -1,16 +1,6 @@
-"""SQLAlchemy models for persistent storage.
-
-Architecture:
-- User          : local application account
-- IGProfile     : global Instagram profile (scraped once, shared)
-- Post          : globally deduplicated extracted post (one per IG shortcode)
-- Group         : user-owned RAG agent (collection of posts)
-- GroupPost     : many-to-many Group <-> Post
-- GroupShare    : users who have read access to a group
-- UserSavedPost : posts the user bookmarked from their IG export
-- Setting       : key/value store for app-wide config
-"""
+from datetime import datetime, timezone
 import time
+from typing import Optional
 
 from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase
@@ -20,52 +10,51 @@ class Base(DeclarativeBase):
     pass
 
 
-# ── Application users ─────────────────────────────────────────────────────────
-
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(String, primary_key=True)         # UUID
+    id = Column(String, primary_key=True)
     username = Column(String, unique=True, nullable=False)
     created_at = Column(Float, default=time.time)
 
 
-# ── Global Instagram profiles ─────────────────────────────────────────────────
-
 class IGProfile(Base):
-    """A tracked Instagram creator profile. Shared globally — scraped once."""
     __tablename__ = "ig_profiles"
 
     username = Column(String, primary_key=True)
-    # Timestamps for incremental updates
     last_scraped_at = Column(Float, nullable=True, default=None)
     last_run_at = Column(String, nullable=True, default=None)
-    # Number of posts scraped in total (informational)
     total_posts_scraped = Column(Integer, default=0)
+    interests = Column(String, default="")
+    max_posts = Column(Integer, default=50)
+    processed_ids = Column(JSON, default=list)
+    failed_ids = Column(JSON, default=list)
+    analysis_mode = Column(String, default="gemini")
+    audio_only = Column(Boolean, default=False)
 
 
-# ── Globally deduplicated posts ───────────────────────────────────────────────
+Profile = IGProfile
+
 
 class Post(Base):
-    """A processed Instagram post. Created once per shortcode, shared by all users."""
     __tablename__ = "posts"
 
-    id = Column(String, primary_key=True)           # IG shortcode
+    id = Column(String, primary_key=True)
     url = Column(String, default="")
-    creator_username = Column(String, default="")   # nullable for manually added reels
-    type = Column(String, default="Post")           # Post | Reel | Sidecar | Image | Video
-    description = Column(Text, default="")          # original caption
-    extracted_knowledge = Column(Text, default="")  # Gemini/Whisper output
-    indexed_at = Column(Float, nullable=True)        # when upserted into Pinecone
+    creator_username = Column(String, default="")
+    type = Column(String, default="Post")
+    description = Column(Text, default="")
+    extracted_knowledge = Column(Text, default="")
+    indexed_at = Column(Float, nullable=True)
 
 
-# ── User groups (RAG agents) ──────────────────────────────────────────────────
+ProcessedPost = Post
+
 
 class Group(Base):
-    """A user-owned named collection of posts that acts as a scoped RAG agent."""
     __tablename__ = "groups"
 
-    id = Column(String, primary_key=True)           # UUID
+    id = Column(String, primary_key=True)
     owner_id = Column(String, ForeignKey("users.id"), nullable=False)
     name = Column(String, nullable=False)
     description = Column(Text, default="")
@@ -77,7 +66,6 @@ class Group(Base):
 
 
 class GroupPost(Base):
-    """Many-to-many: which posts belong to a group."""
     __tablename__ = "group_posts"
 
     group_id = Column(String, ForeignKey("groups.id"), primary_key=True)
@@ -86,41 +74,38 @@ class GroupPost(Base):
 
 
 class GroupShare(Base):
-    """Grants a user read access to another user's group."""
     __tablename__ = "group_shares"
 
     group_id = Column(String, ForeignKey("groups.id"), primary_key=True)
     user_id = Column(String, ForeignKey("users.id"), primary_key=True)
 
 
-# ── User saved posts (bookmarks from IG export) ───────────────────────────────
-
 class UserSavedPost(Base):
-    """Posts the user bookmarked via their Instagram data export."""
     __tablename__ = "user_saved_posts"
 
     user_id = Column(String, ForeignKey("users.id"), primary_key=True)
     post_id = Column(String, ForeignKey("posts.id"), primary_key=True)
     saved_at = Column(Float, default=time.time)
-    source_url = Column(String, default="")         # original URL from the export
+    source_url = Column(String, default="")
 
 
-# ── Import state for saved posts (per user) ───────────────────────────────────
+SavedPost = UserSavedPost
+
 
 class UserSavedState(Base):
-    """Tracks the last IG export import for a given user."""
     __tablename__ = "user_saved_states"
 
     user_id = Column(String, ForeignKey("users.id"), primary_key=True)
     total = Column(Integer, default=0)
     imported_at = Column(String, default="")
     source = Column(String, default="")
+    processed_ids = Column(JSON, default=list)
+    failed_ids = Column(JSON, default=list)
 
-
-# ── App-wide key/value settings ───────────────────────────────────────────────
 
 class Setting(Base):
     __tablename__ = "settings"
 
     key = Column(String, primary_key=True)
     value = Column(JSON)
+
