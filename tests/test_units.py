@@ -82,6 +82,21 @@ class TestProfileConfig:
         assert load_profile("_unit") is None
 
 
+class TestIGProfileInfo:
+    def test_ig_profile_interests_roundtrip(self):
+        from config.ig_profiles import IGProfileInfo, delete_ig_profile, load_ig_profile, save_ig_profile
+        p = IGProfileInfo(username="_ig_unit_test", interests="calisthenics, mobility")
+        save_ig_profile(p)
+
+        loaded = load_ig_profile("_ig_unit_test")
+        assert loaded is not None
+        assert loaded.username == "_ig_unit_test"
+        assert loaded.interests == "calisthenics, mobility"
+
+        delete_ig_profile("_ig_unit_test")
+        assert load_ig_profile("_ig_unit_test") is None
+
+
 class TestAppSettings:
     def test_from_dict_ignores_unknown_keys(self):
         settings = AppSettings.from_dict({"engine": "local_whisper", "future_field": 1, "ig_username": "legacy"})

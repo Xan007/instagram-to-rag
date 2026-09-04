@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # InstaRAG
 
@@ -78,47 +78,72 @@ INSTARAG_API_KEY=your_optional_secret_api_key
 
 ## Command Line Interface (CLI)
 
+> [!TIP]
+> Once installed globally with `uv tool install --editable .`, you can use `instarag` directly. Alternatively, use `uv run instarag <command>`.
+
 ### User Management
 ```bash
-uv run instarag user add <username>
-uv run instarag user list
-uv run instarag user switch <username>
+instarag user create <username>
+instarag user list
 ```
 
-### Profile Ingestion
+### Profile Management & Scraping
 ```bash
-uv run instarag run <creator_username> --max-posts 50 --analysis-mode gemini
+# Register a creator profile (optionally with default interests)
+instarag profile add <creator_username> --interests "calisthenics, mobility"
+
+# Scrape posts: indexes all posts, but only downloads full video/media for posts matching interests
+instarag profile scrape <creator_username> --max-posts 50 --interests "calisthenics, mobility"
+
+# Incremental update since last scrape
+instarag profile update <creator_username>
+
+# List tracked creator profiles
+instarag profile list
+```
+
+### Scoped RAG Groups (Agents)
+```bash
+# Create a scoped group / knowledge agent
+instarag group create <group_name> --desc "Topic Knowledge Base"
+
+# List groups
+instarag group list
+
+# Add posts from a creator profile (optional topic filtering)
+instarag group add-from-profile <group_name> <creator_username> --interests "workout, hypertrophy"
+
+# Add a single reel or post URL / ID to a group
+instarag group add-post <group_name> https://instagram.com/reel/<shortcode>/
+
+# Share group access with another user
+instarag group share <group_name> <target_username>
 ```
 
 ### Saved Posts Ingestion
 ```bash
-uv run instarag saved add https://instagram.com/p/<shortcode>/
-uv run instarag saved import <path_to_saved_posts.html>
-uv run instarag saved process --workers 4
-```
+# Import saved posts archive (.zip or saved_posts.json)
+instarag saved import <path_to_saved_posts.json>
 
-### Scoped RAG Groups
-```bash
-uv run instarag group create <group_name> --description "Topic Knowledge Base"
-uv run instarag group add-posts <group_name> --creator <creator_username>
-uv run instarag group share <group_name> --with <target_username>
+# Process and index imported saved posts
+instarag saved process --workers 4
 ```
 
 ### Knowledge Query & Document Export
 ```bash
 # General query with hybrid search
-uv run instarag query "Explain the proper technique for shoulder press"
+instarag query "Explain the proper technique for shoulder press"
 
 # Query scoped to a group with autonomous PDF export
-uv run instarag query "Create a 4-day upper lower workout routine in PDF" -g <group_name> -o routine.pdf
+instarag query "Create a 4-day upper lower workout routine in PDF" -g <group_name> -o routine.pdf
 
 # Query scoped to a specific creator with Markdown export
-uv run instarag query "Consolidate the ingredients for weekly meal prep" -c <creator_username> -o grocery_list.md
+instarag query "Consolidate the ingredients for weekly meal prep" -c <creator_username> -o grocery_list.md
 ```
 
 ### Interactive Chat Session
 ```bash
-uv run instarag chat -g <group_name>
+instarag chat -g <group_name>
 ```
 
 ---
@@ -127,7 +152,9 @@ uv run instarag chat -g <group_name>
 
 Start the API server:
 ```bash
-uv run instarag serve --host 0.0.0.0 --port 8000
+instarag-api
+# or via uv:
+# uv run instarag-api
 ```
 Interactive OpenAPI documentation is available at `http://localhost:8000/docs`.
 

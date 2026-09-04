@@ -9,6 +9,7 @@ class IGProfileInfo:
     last_scraped_at: Optional[float] = None
     last_run_at: Optional[str] = None
     total_posts_scraped: int = 0
+    interests: str = ""
 
 
 def _repo():
@@ -27,6 +28,7 @@ def _from_model(model) -> IGProfileInfo:
         last_scraped_at=getattr(model, "last_scraped_at", None),
         last_run_at=getattr(model, "last_run_at", None),
         total_posts_scraped=getattr(model, "total_posts_scraped", 0) or 0,
+        interests=getattr(model, "interests", "") or "",
     )
 
 
@@ -48,6 +50,7 @@ def save_ig_profile(profile: IGProfileInfo) -> None:
             last_scraped_at=profile.last_scraped_at,
             last_run_at=profile.last_run_at,
             total_posts_scraped=profile.total_posts_scraped,
+            interests=profile.interests,
         )
         _repo().upsert_ig_profile(db, model)
     finally:

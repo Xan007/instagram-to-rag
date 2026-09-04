@@ -61,14 +61,20 @@ def user_list():
 @profile_app.command("add")
 def profile_add(
     username: str = typer.Argument(..., help="Instagram creator username"),
+    interests: Optional[str] = typer.Option(None, "--interests", "-i", help="Default topic/interests filter for video downloads"),
 ):
     from config.ig_profiles import IGProfileInfo, load_ig_profile, save_ig_profile
     p = load_ig_profile(username)
     if not p:
-        save_ig_profile(IGProfileInfo(username=username))
+        save_ig_profile(IGProfileInfo(username=username, interests=interests or ""))
         console.print(f"[bold green]Registered creator profile @{username} globally.[/bold green]")
     else:
-        console.print(f"[bold yellow]Profile @{username} is already registered.[/bold yellow]")
+        if interests is not None:
+            p.interests = interests
+            save_ig_profile(p)
+            console.print(f"[bold green]Updated interests for profile @{username}: '{interests}'.[/bold green]")
+        else:
+            console.print(f"[bold yellow]Profile @{username} is already registered.[/bold yellow]")
 
 
 @profile_app.command("scrape")
@@ -77,6 +83,7 @@ def profile_scrape_cmd(
     max_posts: int = typer.Option(200, "--max-posts", help="Max posts to scrape"),
     newer_than: Optional[str] = typer.Option(None, "--newer-than", help="Only scrape newer than date"),
     keep_media: bool = typer.Option(False, "--keep-media", help="Keep media files"),
+    interests: Optional[str] = typer.Option(None, "--interests", "-i", help="Filter for video downloads by interests/topics"),
 ):
     from src.pipeline import scrape_profile
     try:
@@ -85,6 +92,7 @@ def profile_scrape_cmd(
             newer_than=newer_than,
             max_posts=max_posts,
             keep_media=keep_media,
+            interests=interests,
             progress=console.print,
         )
         console.print(f"\n[bold green]Finished scraping @{username}![/bold green] Processed: {res['processed']}, Total Indexed: {res['total_indexed']}")
@@ -97,6 +105,7 @@ def profile_scrape_cmd(
 def profile_update_cmd(
     username: str = typer.Argument(..., help="Instagram creator username"),
     keep_media: bool = typer.Option(False, "--keep-media", help="Keep media files"),
+    interests: Optional[str] = typer.Option(None, "--interests", "-i", help="Filter for video downloads by interests/topics"),
 ):
     from datetime import datetime, timezone
     from config.ig_profiles import load_ig_profile
@@ -114,6 +123,7 @@ def profile_update_cmd(
             username=username,
             newer_than=effective_newer,
             keep_media=keep_media,
+            interests=interests,
             progress=console.print,
         )
         console.print(f"\n[bold green]Update completed![/bold green] +{res['processed']} new posts indexed.")
@@ -131,7 +141,8 @@ def profile_list():
         return
     console.print("[bold blue]Instagram Creator Profiles (Global):[/bold blue]")
     for p in profiles:
-        console.print(f"  - @[bold]{p.username}[/bold] | Posts scraped: {p.total_posts_scraped} | Last run: {p.last_run_at or 'never'}")
+        int_str = f" | Interests: '{p.interests}'" if p.interests else ""
+        console.print(f"  - @[bold]{p.username}[/bold] | Posts scraped: {p.total_posts_scraped}{int_str} | Last run: {p.last_run_at or 'never'}")
 
 
 @group_app.command("create")
