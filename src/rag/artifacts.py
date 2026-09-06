@@ -11,8 +11,9 @@ Required Structure:
 1. Target Goal and Suggested Level (1-2 concise lines).
 2. Weekly Split Overview (concise list of days and muscle groups).
 3. Detailed Workout Schedule organized by Training Day:
-   For EACH training day, create a clear subheader (e.g. `### Día 1: Torso (Fuerza / Hipertrofia)`) followed by its dedicated Markdown table:
-   | Ejercicio | Series | Repeticiones | Notas Clave |
+   For EACH training day, create a clear subheader (e.g. `### Day 1: Upper Body (Strength / Hypertrophy)`) followed by its dedicated Markdown table:
+   | Exercise | Sets | Reps | Key Notes |
+   (Translate headers and categories into the user's query language).
    Do NOT create a 'Day' column that repeats the day on every row. Group exercises cleanly under their corresponding day subheader.
 4. Cite original sources using [Source N] sparingly and naturally only when directly relevant.
 
@@ -365,11 +366,11 @@ def export_artifact(
         if sources:
             elements.append(Spacer(1, 14))
             elements.append(HRFlowable(width="100%", thickness=1, color=colors.black, spaceBefore=6, spaceAfter=8))
-            elements.append(Paragraph("<b>Fuentes Citadas (Reels / Posts)</b>", h1_style))
+            elements.append(Paragraph("<b>Cited Sources (Reels / Posts)</b>", h1_style))
 
             for i, s in enumerate(sources, 1):
                 if s.get("cited", True):
-                    creator = s.get("creator", "creador")
+                    creator = s.get("creator", "creator")
                     url = s.get("url", "")
                     summary = s.get("summary", "")
                     summary_html = f"<br/><font size=\"8.5\" color=\"#444444\"><i>- {summary}</i></font>" if summary else ""
@@ -382,7 +383,7 @@ def export_artifact(
     else:
         full_text = f"# {title}\n\n{content}"
         if sources:
-            full_text += "\n\n---\n### Fuentes Citadas\n"
+            full_text += "\n\n---\n### Cited Sources\n"
             for i, s in enumerate(sources, 1):
                 if s.get("cited", True):
                     summary_str = f" — *{s.get('summary')}*" if s.get("summary") else ""

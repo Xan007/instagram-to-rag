@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 import re
 from typing import Optional
 
@@ -13,10 +13,26 @@ class ArtifactIntent:
 
 
 class ArtifactIntentDetector:
-    WORKOUT_KEYWORDS = ["rutina", "entrenamiento", "ejercicio", "workout", "hipertrofia", "fuerza", "torso", "pierna"]
-    RECIPE_KEYWORDS = ["receta", "cocina", "plato", "comida", "postre", "ingredientes", "preparacion"]
-    GROCERY_KEYWORDS = ["mercado", "supermercado", "compras", "lista de compra", "grocery", "ingredientes para comprar"]
-    EXPORT_KEYWORDS = ["pdf", "descargar", "exportar", "documento", "archivo", "imprimir", "guarda", "mandamelo en"]
+    WORKOUT_KEYWORDS = [
+        "workout", "routine", "exercise", "training", "hypertrophy", "strength", "upper", "lower", "split",
+        "rutina", "entrenamiento", "ejercicio", "fuerza", "torso", "pierna",
+    ]
+    RECIPE_KEYWORDS = [
+        "recipe", "cooking", "cook", "dish", "meal", "dessert", "ingredients", "prep", "preparation",
+        "receta", "cocina", "plato", "comida", "postre", "ingredientes", "preparacion",
+    ]
+    GROCERY_KEYWORDS = [
+        "grocery", "shopping", "shopping list", "grocery list", "ingredients to buy", "market", "supermarket",
+        "mercado", "supermercado", "compras", "lista de compra", "ingredientes para comprar",
+    ]
+    EXPORT_KEYWORDS = [
+        "pdf", "download", "export", "document", "file", "print", "save", "markdown",
+        "descargar", "exportar", "documento", "archivo", "imprimir", "guarda", "mandamelo en",
+    ]
+    ACTION_VERBS = [
+        "create", "build", "make", "give", "generate", "plan", "compose", "draft",
+        "crea", "arma", "hazme", "dame", "genera",
+    ]
 
     @classmethod
     def detect(cls, query: str, explicit_artifact: Optional[str] = None, explicit_export: Optional[str] = None) -> ArtifactIntent:
@@ -44,7 +60,7 @@ class ArtifactIntentDetector:
         wants_export = any(k in q_lower for k in cls.EXPORT_KEYWORDS)
         classified_type = cls._classify_type(q_lower)
 
-        if wants_export or (classified_type and any(k in q_lower for k in ["crea", "arma", "hazme", "dame", "genera", "plan"])):
+        if wants_export or (classified_type and any(k in q_lower for k in cls.ACTION_VERBS)):
             ext = ".md" if output_format == "md" else ".pdf"
             art_type = classified_type or "workout_plan"
             filename = f"{art_type}{ext}"
