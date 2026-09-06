@@ -51,12 +51,13 @@ def list_users(db: Session) -> List[User]:
     return db.query(User).all()
 
 
-def create_user(db: Session, username: str) -> User:
-    user = User(id=_new_uuid(), username=username, created_at=time.time())
+def create_user(db: Session, username: str, user_id: Optional[str] = None) -> User:
+    user = User(id=user_id or _new_uuid(), username=username, created_at=time.time())
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
+
 
 
 def delete_user(db: Session, user_id: str) -> bool:

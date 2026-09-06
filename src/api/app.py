@@ -10,6 +10,19 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from config import saved as saved_config
+from config.groups import (
+    GroupInfo,
+    add_post_to_group,
+    create_group,
+    delete_group,
+    get_post_ids_in_group,
+    load_group,
+    load_group_by_name,
+    list_groups_for_user,
+    remove_post_from_group,
+    share_group,
+    unshare_group,
+)
 from config.profiles import (
     ProfileConfig,
     delete_profile,
@@ -24,6 +37,17 @@ from config.settings import (
     AppSettings,
     load_settings,
     save_settings,
+)
+from config.users import (
+    UserInfo,
+    create_user,
+    delete_user,
+    get_current_user_id,
+    get_or_create_user,
+    list_users,
+    load_user,
+    load_user_by_id,
+    resolve_user,
 )
 from src.api.jobs import manager
 
@@ -89,6 +113,8 @@ class SavedProcessIn(BaseModel):
     limit: Optional[int] = None
     caption_only: bool = False
     workers: int = 4
+    user_id: Optional[str] = None
+    username: Optional[str] = None
 
 
 class ChatTurn(BaseModel):
@@ -106,6 +132,91 @@ class QueryIn(BaseModel):
     min_score: float = 0.35
     history: Optional[List[ChatTurn]] = None
     artifact_type: Optional[str] = None
+
+
+class UserIn(BaseModel):
+    username: str = Field(min_length=1)
+    user_id: Optional[str] = None
+
+
+class GroupIn(BaseModel):
+    name: str = Field(min_length=1)
+    description: str = ""
+    user_id: Optional[str] = None
+    username: Optional[str] = None
+
+
+class GroupPostIn(BaseModel):
+    post_id: Optional[str] = None
+    url: Optional[str] = None
+    creator: Optional[str] = None
+    interests: Optional[str] = None
+
+
+class GroupShareIn(BaseModel):
+    target_username: Optional[str] = None
+    target_user_id: Optional[str] = None
+
+
+async def get_current_user(
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_username: Optional[str] = Header(None, alias="X-Username"),
+) -> Optional[UserInfo]:
+    """Resolve active user context from HTTP headers, environment, or single existing user."""
+    identifier = x_user_id or x_username
+    if identifier:
+        auto_create = os.getenv("INSTARAG_AUTO_CREATE_USERS", "true").lower() in ("true", "1", "yes")
+        if auto_create:
+            return get_or_create_user(identifier)
+        user = load_user_by_id(identifier) or load_user(identifier)
+        if user:
+            return user
+        raise HTTPException(status_code=404, detail=f"User '{identifier}' not found.")
+
+    env_user = resolve_user(None)
+    if env_user:
+        return env_user
+
+    users = list_users()
+    if len(users) == 1:
+        return users[0]
+
+    return None
+
+
+def _resolve_api_user(
+    user_id: Optional[str] = None,
+    username: Optional[str] = None,
+    current_user: Optional[UserInfo] = None,
+) -> UserInfo:
+    """Resolve user from explicit parameters, current user context, or system defaults."""
+    auto_create = os.getenv("INSTARAG_AUTO_CREATE_USERS", "true").lower() in ("true", "1", "yes")
+    if username:
+        user = load_user(username)
+        if not user and auto_create:
+            user = get_or_create_user(username)
+        if user:
+            return user
+    if user_id:
+        user = load_user_by_id(user_id)
+        if not user and auto_create:
+            user = get_or_create_user(user_id)
+        if user:
+            return user
+    if current_user:
+        return current_user
+    user = resolve_user(None)
+    if user:
+        return user
+    users = list_users()
+    if len(users) == 1:
+        return users[0]
+    if auto_create:
+        return get_or_create_user("default")
+    raise HTTPException(
+        status_code=400,
+        detail="User not specified and no default user found. Provide 'X-User-Id' header, 'user_id', or 'username'.",
+    )
 
 
 
@@ -223,6 +334,187 @@ def reset_profile(username: str, _: None = Depends(require_api_key)) -> Dict[str
     return {"reset": username, "cleared": cleared}
 
 
+@app.get("/users", tags=["users"])
+def get_users(_: None = Depends(require_api_key)) -> List[Dict[str, Any]]:
+    return [{"id": u.id, "username": u.username, "created_at": u.created_at} for u in list_users()]
+
+
+@app.post("/users", status_code=201, tags=["users"])
+def create_new_user(body: UserIn, _: None = Depends(require_api_key)) -> Dict[str, Any]:
+    existing = load_user(body.username)
+    if existing:
+        raise HTTPException(status_code=409, detail=f"User '{body.username}' already exists.")
+    user = create_user(body.username)
+    return {"id": user.id, "username": user.username, "created_at": user.created_at}
+
+
+@app.get("/users/{username}", tags=["users"])
+def get_user_details(username: str, _: None = Depends(require_api_key)) -> Dict[str, Any]:
+    user = load_user(username) or load_user_by_id(username)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User '{username}' not found.")
+    return {"id": user.id, "username": user.username, "created_at": user.created_at}
+
+
+@app.delete("/users/{username}", tags=["users"])
+def remove_user(username: str, _: None = Depends(require_api_key)) -> Dict[str, str]:
+    if not delete_user(username):
+        raise HTTPException(status_code=404, detail=f"User '{username}' not found.")
+    return {"deleted": username}
+
+
+@app.get("/groups", tags=["groups"])
+def get_groups(
+    user_id: Optional[str] = None,
+    username: Optional[str] = None,
+    current_user: Optional[UserInfo] = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+) -> List[Dict[str, Any]]:
+    user = _resolve_api_user(user_id=user_id, username=username, current_user=current_user)
+    groups = list_groups_for_user(user.id)
+    return [
+        {
+            "id": g.id,
+            "owner_id": g.owner_id,
+            "name": g.name,
+            "description": g.description,
+            "created_at": g.created_at,
+            "post_count": g.post_count,
+            "shared_with": g.shared_with,
+        }
+        for g in groups
+    ]
+
+
+@app.post("/groups", status_code=201, tags=["groups"])
+def create_new_group(
+    body: GroupIn,
+    current_user: Optional[UserInfo] = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+) -> Dict[str, Any]:
+    user = _resolve_api_user(user_id=body.user_id, username=body.username, current_user=current_user)
+    existing = load_group_by_name(user.id, body.name)
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Group '{body.name}' already exists for user '{user.username}'.")
+    g = create_group(user.id, body.name, body.description)
+    return {
+        "id": g.id,
+        "owner_id": g.owner_id,
+        "name": g.name,
+        "description": g.description,
+        "created_at": g.created_at,
+        "post_count": g.post_count,
+        "shared_with": g.shared_with,
+    }
+
+
+@app.get("/groups/{group_id}", tags=["groups"])
+def get_group_details(group_id: str, _: None = Depends(require_api_key)) -> Dict[str, Any]:
+    g = load_group(group_id)
+    if not g:
+        raise HTTPException(status_code=404, detail=f"Group '{group_id}' not found.")
+    return {
+        "id": g.id,
+        "owner_id": g.owner_id,
+        "name": g.name,
+        "description": g.description,
+        "created_at": g.created_at,
+        "post_count": g.post_count,
+        "shared_with": g.shared_with,
+        "post_ids": get_post_ids_in_group(group_id),
+    }
+
+
+@app.delete("/groups/{group_id}", tags=["groups"])
+def remove_group(group_id: str, _: None = Depends(require_api_key)) -> Dict[str, str]:
+    if not delete_group(group_id):
+        raise HTTPException(status_code=404, detail=f"Group '{group_id}' not found.")
+    return {"deleted": group_id}
+
+
+@app.post("/groups/{group_id}/posts", tags=["groups"])
+def add_post_to_group_endpoint(
+    group_id: str,
+    body: GroupPostIn,
+    _: None = Depends(require_api_key),
+) -> Dict[str, Any]:
+    g = load_group(group_id)
+    if not g:
+        raise HTTPException(status_code=404, detail=f"Group '{group_id}' not found.")
+
+    if body.creator:
+        from src.pipeline.group import populate_group_from_profile
+        try:
+            res = populate_group_from_profile(g.owner_id, g.name, body.creator, interests=body.interests)
+            return {"status": "ok", "group_id": group_id, "result": res}
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+    if body.url:
+        from src.pipeline import add_reel
+        try:
+            add_reel([body.url], group_id=group_id)
+            return {"status": "ok", "group_id": group_id, "url": body.url}
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Failed to add reel: {e}")
+
+    if body.post_id:
+        added = add_post_to_group(group_id, body.post_id)
+        return {"status": "ok", "group_id": group_id, "post_id": body.post_id, "added": added}
+
+    raise HTTPException(status_code=422, detail="Provide 'post_id', 'url', or 'creator'.")
+
+
+@app.delete("/groups/{group_id}/posts/{post_id}", tags=["groups"])
+def remove_post_from_group_endpoint(
+    group_id: str,
+    post_id: str,
+    _: None = Depends(require_api_key),
+) -> Dict[str, Any]:
+    g = load_group(group_id)
+    if not g:
+        raise HTTPException(status_code=404, detail=f"Group '{group_id}' not found.")
+    removed = remove_post_from_group(group_id, post_id)
+    return {"group_id": group_id, "post_id": post_id, "removed": removed}
+
+
+@app.post("/groups/{group_id}/share", tags=["groups"])
+def share_group_endpoint(
+    group_id: str,
+    body: GroupShareIn,
+    _: None = Depends(require_api_key),
+) -> Dict[str, Any]:
+    g = load_group(group_id)
+    if not g:
+        raise HTTPException(status_code=404, detail=f"Group '{group_id}' not found.")
+
+    target_user = None
+    if body.target_username:
+        target_user = load_user(body.target_username)
+    elif body.target_user_id:
+        target_user = load_user_by_id(body.target_user_id)
+
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Target user not found.")
+
+    shared = share_group(group_id, target_user.id)
+    return {"group_id": group_id, "target_user_id": target_user.id, "shared": shared}
+
+
+@app.delete("/groups/{group_id}/share/{user_id}", tags=["groups"])
+def unshare_group_endpoint(
+    group_id: str,
+    user_id: str,
+    _: None = Depends(require_api_key),
+) -> Dict[str, Any]:
+    g = load_group(group_id)
+    if not g:
+        raise HTTPException(status_code=404, detail=f"Group '{group_id}' not found.")
+
+    unshared = unshare_group(group_id, user_id)
+    return {"group_id": group_id, "unshared_user_id": user_id, "unshared": unshared}
+
+
 def _submit(kind: str, fn, **fn_kwargs) -> JSONResponse:
     job = manager.submit(kind, fn, **fn_kwargs)
     return JSONResponse(status_code=202, content={"job_id": job.id, "status_url": f"/jobs/{job.id}"})
@@ -261,12 +553,18 @@ def job_add_reel(body: AddReelIn, _: None = Depends(require_api_key)) -> JSONRes
 
 
 @app.post("/jobs/saved-process", status_code=202, tags=["jobs"])
-def job_saved_process(body: SavedProcessIn, _: None = Depends(require_api_key)) -> JSONResponse:
+def job_saved_process(
+    body: SavedProcessIn,
+    current_user: Optional[UserInfo] = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+) -> JSONResponse:
     from src.pipeline import process_saved
 
+    user = _resolve_api_user(user_id=body.user_id, username=body.username, current_user=current_user)
     return _submit(
         "saved-process",
         process_saved,
+        user_id=user.id,
         limit=body.limit,
         caption_only=body.caption_only,
         workers=body.workers,
@@ -302,59 +600,129 @@ def get_job(job_id: str, log_limit: int = 200, _: None = Depends(require_api_key
 
 
 @app.post("/saved/import", tags=["saved"])
-async def saved_import(file: UploadFile = File(...), _: None = Depends(require_api_key)) -> Dict[str, Any]:
+async def saved_import(
+    file: UploadFile = File(...),
+    user_id: Optional[str] = None,
+    username: Optional[str] = None,
+    current_user: Optional[UserInfo] = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+) -> Dict[str, Any]:
     suffix = Path(file.filename or "export.zip").suffix.lower()
     if suffix not in (".zip", ".json"):
         raise HTTPException(status_code=422, detail="Upload a .zip export or a saved_posts.json file.")
+
+    user = _resolve_api_user(user_id=user_id, username=username, current_user=current_user)
 
     fd, tmp_path = tempfile.mkstemp(suffix=suffix)
     try:
         with os.fdopen(fd, "wb") as tmp:
             shutil.copyfileobj(file.file, tmp)
-        state = saved_config.import_saved_posts(Path(tmp_path))
+        from src.pipeline.saved import import_user_saved_posts
+        import_res = import_user_saved_posts(user.id, Path(tmp_path))
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=422, detail=str(e))
     finally:
         os.unlink(tmp_path)
 
-    return {
-        "total": state.total,
-        "imported_at": state.imported_at,
-        "source": state.source,
-        "processed": len(state.processed_ids),
-        "failed": len(state.failed_ids),
-    }
+    from storage.db import get_session
+    import storage.repositories as repo
+    db = get_session()
+    try:
+        s_model = repo.get_user_saved_state(db, user.id)
+        return {
+            "user_id": user.id,
+            "total": s_model.total,
+            "imported_at": s_model.imported_at,
+            "source": s_model.source,
+            "processed": len(s_model.processed_ids or []),
+            "failed": len(s_model.failed_ids or []),
+            "new_saved": import_res.get("new_saved", 0),
+        }
+    finally:
+        db.close()
 
 
 @app.get("/saved/status", tags=["saved"])
-def saved_status(_: None = Depends(require_api_key)) -> Dict[str, Any]:
-    state = saved_config.load_state()
-    if state.total == 0:
-        return {"imported": False}
-    return {
-        "imported": True,
-        "total": state.total,
-        "imported_at": state.imported_at,
-        "source": state.source,
-        "processed": len(state.processed_ids),
-        "failed": len(state.failed_ids),
-        "pending": max(state.total - len(state.processed_ids), 0),
-        "failed_ids": state.failed_ids,
-    }
+def saved_status(
+    user_id: Optional[str] = None,
+    username: Optional[str] = None,
+    current_user: Optional[UserInfo] = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+) -> Dict[str, Any]:
+    try:
+        user = _resolve_api_user(user_id=user_id, username=username, current_user=current_user)
+        from storage.db import get_session
+        import storage.repositories as repo
+        db = get_session()
+        try:
+            state = repo.get_user_saved_state(db, user.id)
+            if state.total == 0:
+                return {"imported": False, "user_id": user.id}
+            return {
+                "imported": True,
+                "user_id": user.id,
+                "total": state.total,
+                "imported_at": state.imported_at,
+                "source": state.source,
+                "processed": len(state.processed_ids or []),
+                "failed": len(state.failed_ids or []),
+                "pending": max(state.total - len(state.processed_ids or []), 0),
+                "failed_ids": state.failed_ids or [],
+            }
+        finally:
+            db.close()
+    except HTTPException:
+        state = saved_config.load_state()
+        if state.total == 0:
+            return {"imported": False}
+        return {
+            "imported": True,
+            "total": state.total,
+            "imported_at": state.imported_at,
+            "source": state.source,
+            "processed": len(state.processed_ids),
+            "failed": len(state.failed_ids),
+            "pending": max(state.total - len(state.processed_ids), 0),
+            "failed_ids": state.failed_ids,
+        }
 
 
 @app.post("/saved/reset", tags=["saved"])
-def saved_reset(_: None = Depends(require_api_key)) -> Dict[str, Any]:
-    state = saved_config.load_state()
-    cleared = len(state.processed_ids) + len(state.failed_ids)
-    state.processed_ids = []
-    state.failed_ids = []
-    saved_config.save_state(state)
-    return {"cleared": cleared}
+def saved_reset(
+    user_id: Optional[str] = None,
+    username: Optional[str] = None,
+    current_user: Optional[UserInfo] = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+) -> Dict[str, Any]:
+    try:
+        user = _resolve_api_user(user_id=user_id, username=username, current_user=current_user)
+        from storage.db import get_session
+        import storage.repositories as repo
+        db = get_session()
+        try:
+            state = repo.get_user_saved_state(db, user.id)
+            cleared = len(state.processed_ids or []) + len(state.failed_ids or [])
+            state.processed_ids = []
+            state.failed_ids = []
+            repo.save_user_saved_state(db, state)
+            return {"cleared": cleared, "user_id": user.id}
+        finally:
+            db.close()
+    except HTTPException:
+        state = saved_config.load_state()
+        cleared = len(state.processed_ids) + len(state.failed_ids)
+        state.processed_ids = []
+        state.failed_ids = []
+        saved_config.save_state(state)
+        return {"cleared": cleared}
 
 
 @app.post("/query", tags=["rag"])
-def query(body: QueryIn, _: None = Depends(require_api_key)) -> Dict[str, Any]:
+def query(
+    body: QueryIn,
+    current_user: Optional[UserInfo] = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+) -> Dict[str, Any]:
     """Grounded RAG query.
 
     mode='grounded_plus' (default) answers from creator content and may append
@@ -385,7 +753,10 @@ def query(body: QueryIn, _: None = Depends(require_api_key)) -> Dict[str, Any]:
         }
         if body.group_name:
             kwargs["group_name"] = body.group_name
-        if body.user_id:
+            resolved_uid = body.user_id or (current_user.id if current_user else None)
+            if resolved_uid:
+                kwargs["user_id"] = resolved_uid
+        elif body.user_id:
             kwargs["user_id"] = body.user_id
         if body.artifact_type:
             kwargs["artifact_type"] = body.artifact_type

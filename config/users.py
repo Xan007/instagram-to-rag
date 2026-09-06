@@ -65,10 +65,26 @@ def load_user_by_id(user_id: str) -> Optional[UserInfo]:
         db.close()
 
 
-def create_user(username: str) -> UserInfo:
+def create_user(username: str, user_id: Optional[str] = None) -> UserInfo:
     db = _db()
     try:
-        model = _repo().create_user(db, username)
+        model = _repo().create_user(db, username, user_id=user_id)
+        return _from_model(model)
+    finally:
+        db.close()
+
+
+def get_or_create_user(identifier: str) -> UserInfo:
+    """Find a user by username or ID, or auto-create if it does not exist."""
+    db = _db()
+    try:
+        model = _repo().get_user_by_id(db, identifier)
+        if model:
+            return _from_model(model)
+        model = _repo().get_user_by_username(db, identifier)
+        if model:
+            return _from_model(model)
+        model = _repo().create_user(db, username=identifier, user_id=identifier)
         return _from_model(model)
     finally:
         db.close()

@@ -23,10 +23,11 @@ docker compose up -d --build
 
 ---
 
-## Authentication and Security
+## Authentication and User Context
 
 - **API Protection:** Set the `INSTARAG_API_KEY` environment variable. When set, all requests (except `/health`) must include the `X-API-Key: <your_secret_key>` header.
-- **Identity Decoupling:** Endpoints accept opaque `user_id` or `username` parameters, allowing integration with external identity providers (such as Clerk, Supabase Auth, Firebase, or custom JWT middlewares).
+- **Identity Decoupling & User Context:** Pass `X-User-Id: <user_id>` or `X-Username: <username>` headers in requests. When `INSTARAG_AUTO_CREATE_USERS=true` (default), users are provisioned on-the-fly without requiring prior registration calls, enabling effortless integration with Clerk, Supabase Auth, Firebase, or custom JWT middlewares.
+- **Single-User & Local Mode:** If headers are omitted, InstaRAG automatically falls back to the `INSTARAG_USER` environment variable or the single registered user in the database.
 
 ---
 
@@ -36,6 +37,12 @@ docker compose up -d --build
 |---|---|---|
 | GET | `/health` | Liveness and readiness check. Returns `{"status": "ok"}`. |
 | GET / PATCH | `/config` | Inspect and update global pipeline settings (`audio_only`, `engine`, `embed_provider`). |
+| GET / POST | `/users` | List registered users or create a new user account. |
+| GET / DELETE | `/users/{username}` | Retrieve details or delete a registered user. |
+| GET / POST | `/groups` | List scoped RAG groups for user or create a new group. |
+| GET / DELETE | `/groups/{group_id}` | Retrieve group metadata and post IDs or delete a group. |
+| POST / DELETE | `/groups/{group_id}/posts` | Add/remove posts, reels, or creator content in a group. |
+| POST / DELETE | `/groups/{group_id}/share` | Share or revoke group access for another user. |
 | GET / POST | `/profiles` | List registered creator profiles or register a new creator profile. |
 | GET / DELETE | `/profiles/{username}` | Retrieve details or delete a registered profile. |
 | POST | `/profiles/{username}/reset` | Reset processing history for a creator profile. |
@@ -44,8 +51,9 @@ docker compose up -d --build
 | POST | `/jobs/saved-process` | Submit an asynchronous background job to process user saved posts. |
 | GET | `/jobs` | List recent background jobs and worker queue status. |
 | GET | `/jobs/{job_id}` | Inspect job status, execution metrics, and timestamped log tail. |
-| POST | `/saved/import` | Upload an Instagram data export (`.zip` or `saved_posts.json`). |
+| POST | `/saved/import` | Upload an Instagram data export (`.zip` or `saved_posts.json`) scoped to user. |
 | GET | `/saved/status` | Retrieve import counters and pending post stats. |
+| POST | `/saved/reset` | Clear processed saved posts state for user. |
 | POST | `/query` | Execute a grounded RAG query with optional multi-turn conversation history. |
 
 ---
