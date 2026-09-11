@@ -352,3 +352,31 @@ def upsert_saved_posts_bulk(db: Session, posts: List[UserSavedPost]) -> None:
             db.add(p)
     db.commit()
 
+
+from storage.models import JobRecord
+
+def get_job(db: Session, job_id: str) -> Optional[JobRecord]:
+    return db.query(JobRecord).filter(JobRecord.id == job_id).first()
+
+def create_job(db: Session, job_id: str, kind: str) -> JobRecord:
+    job = JobRecord(id=job_id, kind=kind, created_at=time.time())
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+def update_job(db: Session, job: JobRecord) -> None:
+    db.commit()
+
+def list_jobs(db: Session) -> List[JobRecord]:
+    return db.query(JobRecord).order_by(JobRecord.created_at.desc()).all()
+
+def append_job_log(db: Session, job_id: str, message: str) -> None:
+    job = get_job(db, job_id)
+    if job:
+        logs = list(job.log or [])
+        entry = f"[{time.strftime('%H:%M:%S')}] {message}"
+        logs.append(entry)
+        job.log = logs
+        db.commit()
+

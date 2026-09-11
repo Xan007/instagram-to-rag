@@ -109,3 +109,17 @@ class Setting(Base):
     key = Column(String, primary_key=True)
     value = Column(JSON)
 
+
+class JobRecord(Base):
+    __tablename__ = "jobs"
+
+    id = Column(String, primary_key=True)
+    kind = Column(String, nullable=False)
+    status = Column(String, default="queued")
+    created_at = Column(Float, default=time.time)
+    started_at = Column(Float, nullable=True)
+    finished_at = Column(Float, nullable=True)
+    result = Column(JSON, nullable=True)
+    error = Column(Text, nullable=True)
+    log = Column(JSON, default=list)
+

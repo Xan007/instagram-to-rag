@@ -1,9 +1,7 @@
-﻿import logging
+import logging
 import re
 from typing import Any, Dict, List, Optional
 from rank_bm25 import BM25Okapi
-from storage.db import get_session
-import storage.repositories as repo
 
 logger = logging.getLogger(__name__)
 
@@ -26,35 +24,10 @@ class HybridRetriever:
         post_ids: Optional[List[str]] = None,
         top_k: int = 6,
     ) -> List[Dict[str, Any]]:
-        db = get_session()
-        try:
-            if post_ids is not None:
-                all_posts = [repo.get_post(db, pid) for pid in post_ids]
-                all_posts = [p for p in all_posts if p is not None]
-            elif creator:
-                all_posts = repo.list_posts(db, creator_username=creator)
-            else:
-                all_posts = repo.list_posts(db)
-        finally:
-            db.close()
-
-        if not all_posts and not pinecone_matches:
+        if not pinecone_matches:
             return []
 
         doc_by_id: Dict[str, Dict[str, Any]] = {}
-        for p in all_posts:
-            doc_by_id[p.id] = {
-                "id": p.id,
-                "score": 0.0,
-                "metadata": {
-                    "post_id": p.id,
-                    "creator_username": p.creator_username,
-                    "url": p.url,
-                    "type": p.type,
-                    "original_description": p.description,
-                    "extracted_knowledge": p.extracted_knowledge,
-                },
-            }
 
         for m in pinecone_matches:
             meta = m.get("metadata", {})
